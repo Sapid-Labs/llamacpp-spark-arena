@@ -1,0 +1,12 @@
+Complete the following Python module. Implement every function fully, then add unittest test cases for each. Output only code, no prose.
+
+import csv
+from dataclasses import dataclass
+
+@dataclass
+class Column:
+    name: str
+    kind: type
+
+def infer_column(values):
+    """Infer the narrowest type that holds every value: int, float, bool, or str."""

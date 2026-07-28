@@ -1,0 +1,97 @@
+{
+  "contractVersion": 1,
+  "engine": "llama.cpp",
+  "hardware": {
+    "name": "NVIDIA DGX Spark",
+    "chip": "GB10",
+    "cudaArch": "sm_121",
+    "cmakeCudaArchitectures": "121",
+    "note": "torch.cuda.get_arch_list() on this part returns sm_80/90/100/110/120 -- nothing is built for 12.1. That gap is the point of this arena."
+  },
+
+  "vendor": {
+    "repo": "https://github.com/Sapid-Labs/llama.cpp.git",
+    "ref": "laguna-support",
+    "commit": "7ad9bd2",
+    "upstream": {
+      "repo": "https://github.com/ggml-org/llama.cpp.git",
+      "commit": "ee445f93d8a0a5033a46d1960e901ef5caec9a41",
+      "note": "upstream ggml-org master; the fork carries 5 commits on top of it (laguna arch port + DFlash draft). The arch port is upstreamed as ggml-org/llama.cpp#25595, unmerged at pin time. 'What changed vs stock' = these 5 commits plus your diff."
+    },
+    "buildFlags": ["-DGGML_CUDA=ON", "-DCMAKE_CUDA_ARCHITECTURES=121"]
+  },
+
+  "editablePaths": [
+    "ggml/src/ggml-cuda/**",
+    "ggml/src/ggml.c",
+    "ggml/src/ggml-backend.cpp",
+    "src/llama-model.cpp",
+    "src/llama-graph.cpp",
+    "src/llama-graph.h"
+  ],
+  "editablePathsNote": "CUDA kernels and the model graph. Deliberately NOT editable: tools/server (the thing being measured), common/, tests/, and the CMake build definition -- a submission that changes how it is timed is not a submission.",
+
+  "gates": [
+    {
+      "id": "editable-surface",
+      "order": 1,
+      "rule": "git diff vendor base->candidate touches only editablePaths, and the target's model integrity (file sha256 + param count from /props) is unchanged."
+    },
+    {
+      "id": "token-identity",
+      "order": 2,
+      "rule": "For every public prompt: candidate output is byte-identical to the target's golden, at batch 1, greedy, warmup discarded."
+    },
+    {
+      "id": "held-out-token-identity",
+      "order": 3,
+      "rule": "Same, on prompts the submitter has never seen. Run by the referee only. Catches a kernel that reassociated its way into a different argmax everywhere except the prompts it was tuned against."
+    },
+    {
+      "id": "speedup-floors",
+      "order": 4,
+      "rule": "decode_speedup >= 0.95 AND prefill_speedup >= 0.95. Hard floors -- you cannot trade prefill away for decode."
+    },
+    {
+      "id": "beat-incumbent",
+      "order": 5,
+      "rule": "score > current leaderboard score for every target claimed."
+    }
+  ],
+
+  "scoring": {
+    "formula": "decode_speedup^0.75 * prefill_speedup^0.25",
+    "decodeExponent": 0.75,
+    "prefillExponent": 0.25,
+    "floor": 0.95,
+    "pairing": "Speedups are paired ratios: baseline and candidate arms run back to back, alternating, in the same session on the same node. The ratio cancels host and thermal drift -- which is not theoretical here (a published baseline failed to reproduce a day later, 24.05 -> 20.09 tok/s).",
+    "pairs": 2,
+    "aggregate": "median of per-pair ratios"
+  },
+
+  "measurement": {
+    "batchSize": 1,
+    "serverFlags": ["--parallel 1"],
+    "warmupRequests": 1,
+    "warmupDiscarded": true,
+    "warmupNote": "The first request after server start differs on BOTH engines. Discard it or every comparison reports a phantom mismatch.",
+    "determinism": {
+      "measuredOn": "2026-07-28",
+      "llamaCpp": "24/24 identical at batch 1, warm, greedy",
+      "vllm": "12/12 identical (0.26.0) at batch 1; n=2 -> 2 distinct, n=6 -> 5 distinct",
+      "consequence": "Any batching breaks token identity, so the ranked track is serial. This is not a limitation to route around; it is what makes the cheap correctness gate possible at all."
+    },
+    "thermalGate": {
+      "metric": "nvidia-smi --query-gpu=temperature.gpu",
+      "maxStartTempC": 46,
+      "maxWaitSeconds": 900,
+      "note": "mlxfast uses a fixed 40 C. The Spark idles around 43 C (measured 43 on Spark-1, 2026-07-28) and has been observed at 84 C under sustained load while its sibling idled at 43, so 40 is unreachable and copying it would deadlock the gate."
+    }
+  },
+
+  "policy": {
+    "optimizationVsRecipe": "Optimizations preserve output and get the cheap gate. Changes that alter output (precision, quantization, sampling) are a new RECIPE, not an arena submission, and need eval evidence on howtospark.com.",
+    "scoreScope": "A submission names the targets it claims. Engine-general changes score across all targets; model-specific ones score on one. A claim of 'faster Q4_K MoE matmul' where a dense Q8_0 target also moves is incoherent and does not promote.",
+    "baselineAfterPromotion": "OPEN QUESTION -- mlxfast re-pins the baseline to the frontier. Until decided, the baseline is the vendor pin above and every score is only meaningful against contractVersion 1."
+  }
+}

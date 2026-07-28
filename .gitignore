@@ -1,0 +1,19 @@
+# The engine is fetched at a pinned commit by setup.sh, never committed.
+# A submission is the diff of this tree against the pin -- keeping it out of
+# the arena repo is what makes that diff exact.
+vendor/
+
+# Referee-only. Gate 3 needs prompts the submitter has never seen, and this
+# repo is public.
+targets/*/prompts-heldout/
+targets/*/goldens-heldout.json
+
+# Full golden text is large and reconstructible; goldens.json carries the
+# hashes, which is what the gate actually compares.
+targets/*/goldens/
+
+results/_logs/
+
+__pycache__/
+*.pyc
+.DS_Store
