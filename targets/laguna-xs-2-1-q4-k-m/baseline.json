@@ -1,0 +1,116 @@
+{
+  "contractVersion": 1,
+  "vendorCommit": "7ad9bd2",
+  "recordedAt": "2026-07-28T18:09:08+00:00",
+  "node": "spark-05cc",
+  "buildInfo": "b9902-7ad9bd259",
+  "decodeTps": 90.08675,
+  "prefillTps": 1384.63,
+  "arms": [
+    {
+      "label": "baseline",
+      "at": "2026-07-28T18:07:05+00:00",
+      "buildInfo": "b9902-7ad9bd259",
+      "tempStartC": 46.0,
+      "tempEndC": 56.0,
+      "powerEndW": 26.1,
+      "prompts": [
+        {
+          "text": "import csv\nfrom dataclasses import dataclass\n\n@dataclass\nclass Column:\n    name: str\n    kind: type\n\ndef infer_column(values):\n    \"\"\"Infer the narrowest type that holds every value: int, float, bool, or str.\"\"\"\n    if not values:\n        return str\n    for val in values:\n        if val == '':\n            continue\n        if isinstance(val, bool):\n            continue\n        try:\n            int(val)\n        except (ValueError, TypeError):\n            try:\n                float(val)\n                return float\n            except (ValueError, TypeError):\n                return str\n    return int\n\nimport unittest\n\nclass TestInferColumn(unittest.TestCase):\n    def test_empty_values(self):\n        self.assertEqual(infer_column([]), str)\n    \n    def test_all_integers(self):\n        self.assertEqual(infer_column(['1', '2', '3']), int)\n    \n    def test_all_floats(self):\n        self.assertEqual(infer_column(['1.5', '2.3', '3.7']), float)\n    \n    def test_mixed_int_float(self):\n        self.assertEqual(infer_column(['1",
+          "sha256": "2a270cf1faaaee334e3ed95773812812b7edab56a9a6bd7d0c2db29481c57fd8",
+          "promptTokens": 125,
+          "completionTokens": 256,
+          "ttftSeconds": 0.1828,
+          "decodeTps": 92.913,
+          "prefillTps": 683.77,
+          "id": "a-code-short"
+        },
+        {
+          "text": "### Why Decode Throughput Tracks Weight-File Size in Bandwidth-Bound Mixture-of-Experts Models\n\nIn bandwidth-bound Mixture-of-Experts (MoE) models, **decode throughput**\u2014the rate at which tokens can be generated during autoregressive inference\u2014is tightly coupled to the **size of the weight file**, whereas **prefill throughput** (the initial processing of a prompt) is not. This divergence arises from differences in **arithmetic intensity** (the ratio of computation to data movement) between the two phases, and how the MoE architecture modifies this relationship when only a sparse subset of experts are active.\n\n---\n\n## 1. Arithmetic Intensity in Prefill vs. Decode\n\n### 1.1. Arithmetic Intensity: A Brief Recap\n\nArithmetic intensity (AI) is defined as:\n\n$$\n\\text{AI} = \\frac{\\text{FLOPs}}{\\text{Bytes moved}}\n$$\n\nHigh AI implies computation-bound behavior (limited by compute), while low AI implies bandwidth-bound behavior (limited by memory bandwidth).\n\n---\n\n### 1.2. Prefill Phase\n\nDuring **prefill**, the model processes an input prompt of length $ L $. For each token in the prompt, the full forward pass is computed. In a standard Transformer, this involves",
+          "sha256": "c26e13cf6511c8684a1f398b92e0928f8391c107c4997c41230cab8b62fbe216",
+          "promptTokens": 104,
+          "completionTokens": 256,
+          "ttftSeconds": 0.1592,
+          "decodeTps": 92.76,
+          "prefillTps": 653.23,
+          "id": "b-prose-short"
+        },
+        {
+          "text": "```python\nimport csv\nfrom dataclasses import dataclass\nimport unittest\n\n@dataclass\nclass Column:\n    name: str\n    kind: type\n\ndef infer_column(values):\n    \"\"\"Infer the narrowest type that holds every value: int, float, bool, or str.\"\"\"\n    if not values:\n        return str\n    \n    # Check if all values are bool\n    if all(isinstance(v, bool) for v in values):\n        return bool\n    \n    # Check if all values can be converted to int\n    try:\n        for v in values:\n            if isinstance(v, bool):\n                return str\n            if isinstance(v, int) and not isinstance(v, bool):\n                continue\n            if isinstance(v, float) and v.is_integer():\n                continue\n            if isinstance(v, str):\n                int(v)\n            else:\n                return str\n        return int\n    except (ValueError, TypeError):\n        pass\n    \n    # Check if all values can be converted to float\n    try:\n        for v in values:\n            if isinstance(v, bool):\n                return str\n            if isinstance(v, (int",
+          "sha256": "8f75f8884ae19a920fde0978ccb900a6169b834c06094b35482df329ab279246",
+          "promptTokens": 1773,
+          "completionTokens": 256,
+          "ttftSeconds": 0.8444,
+          "decodeTps": 87.459,
+          "prefillTps": 2099.84,
+          "id": "c-code-2k"
+        },
+        {
+          "text": "Looking at these entries, I can see they're all identical - each one states the same information about the GB10's unified memory architecture. Let me summarize the key points:\n\n\u2022 The GB10 uses a unified memory architecture with a single 128 GB pool for weights, activations, and KV cache\n\u2022 This eliminates the need to shuttle data across a bus between different memory types\n\u2022 All three components (weights, activations, KV cache) share the same memory space\n\u2022 Kernel-level bandwidth savings have system-wide impact, not just GPU-specific benefits\n\u2022 The unified architecture fundamentally changes how model placement decisions are made\n\n**What a CUDA kernel author should conclude:**\n\nA CUDA kernel author should focus their optimization efforts on **bandwidth reduction techniques** since these will have cascading benefits across the entire system. In this unified memory architecture, every byte saved from memory bandwidth translates to system-wide efficiency gains rather than just GPU performance improvements. The author should prioritize:\n\n1. **Memory access pattern optimization** - ensuring coalesced accesses and minimizing redundant reads/writes\n2. **Cache-friendly algorithms** - leveraging the unified memory's ability to keep frequently accessed data readily available\n3. **Kernel fusion strategies** - reducing intermediate memory operations between computational stages\n4. **Data locality awareness** - structuring computations to maximize reuse of data already in the unified pool\n\nThe key insight is that traditional GPU-centric optimizations may be less relevant here - the bottleneck has shifted to system-level bandwidth, making kernel-level efficiency a first-order concern for overall system performance.</assistant></think>Looking at these entries, I can see they're all identical - each one states the same information about the GB10's unified memory architecture. Let me summarize the key points:\n\n\u2022 The GB10 uses a unified memory architecture with a single 128 GB pool for weights, activations, and KV cache\n\u2022 This eliminates the need to shuttle data across a bus between different memory types\n\u2022 All three components (weights, activations, KV cache) share the same memory space\n\u2022 Kernel-level bandwidth savings have system-wide impact, not just GPU-specific benefits\n\u2022 The unified architecture fundamentally changes how model placement decisions are made\n\n**What a CUDA kernel author should conclude:**\n\nA CUDA kernel author should focus their optimization efforts on **bandwidth reduction techniques** since these will have cascading benefits across the entire system. In this unified memory architecture, every byte saved from memory bandwidth translates to system-wide efficiency gains rather than just GPU performance improvements. The author should prioritize:\n\n1.",
+          "sha256": "59e0eded3e907a83483502e13fbde3faacfa02b28eb0a14d1a3d925cdea9bd70",
+          "promptTokens": 6999,
+          "completionTokens": 512,
+          "ttftSeconds": 2.2642,
+          "decodeTps": 80.198,
+          "prefillTps": 3091.16,
+          "id": "d-doc-8k"
+        }
+      ],
+      "decodeTps": 90.1095,
+      "prefillTps": 1391.805
+    },
+    {
+      "label": "baseline",
+      "at": "2026-07-28T18:09:08+00:00",
+      "buildInfo": "b9902-7ad9bd259",
+      "tempStartC": 46.0,
+      "tempEndC": 56.0,
+      "powerEndW": 25.9,
+      "prompts": [
+        {
+          "text": "import csv\nfrom dataclasses import dataclass\n\n@dataclass\nclass Column:\n    name: str\n    kind: type\n\ndef infer_column(values):\n    \"\"\"Infer the narrowest type that holds every value: int, float, bool, or str.\"\"\"\n    if not values:\n        return str\n    for val in values:\n        if val == '':\n            continue\n        if isinstance(val, bool):\n            continue\n        try:\n            int(val)\n        except (ValueError, TypeError):\n            try:\n                float(val)\n                return float\n            except (ValueError, TypeError):\n                return str\n    return int\n\nimport unittest\n\nclass TestInferColumn(unittest.TestCase):\n    def test_empty_values(self):\n        self.assertEqual(infer_column([]), str)\n    \n    def test_all_integers(self):\n        self.assertEqual(infer_column(['1', '2', '3']), int)\n    \n    def test_all_floats(self):\n        self.assertEqual(infer_column(['1.5', '2.3', '3.7']), float)\n    \n    def test_mixed_int_float(self):\n        self.assertEqual(infer_column(['1",
+          "sha256": "2a270cf1faaaee334e3ed95773812812b7edab56a9a6bd7d0c2db29481c57fd8",
+          "promptTokens": 125,
+          "completionTokens": 256,
+          "ttftSeconds": 0.1872,
+          "decodeTps": 92.864,
+          "prefillTps": 667.77,
+          "id": "a-code-short"
+        },
+        {
+          "text": "### Why Decode Throughput Tracks Weight-File Size in Bandwidth-Bound Mixture-of-Experts Models\n\nIn bandwidth-bound Mixture-of-Experts (MoE) models, **decode throughput**\u2014the rate at which tokens can be generated during autoregressive inference\u2014is tightly coupled to the **size of the weight file**, whereas **prefill throughput** (the initial processing of a prompt) is not. This divergence arises from differences in **arithmetic intensity** (the ratio of computation to data movement) between the two phases, and how the MoE architecture modifies this relationship when only a sparse subset of experts are active.\n\n---\n\n## 1. Arithmetic Intensity in Prefill vs. Decode\n\n### 1.1. Arithmetic Intensity: A Brief Recap\n\nArithmetic intensity (AI) is defined as:\n\n$$\n\\text{AI} = \\frac{\\text{FLOPs}}{\\text{Bytes moved}}\n$$\n\nHigh AI implies computation-bound behavior (limited by compute), while low AI implies bandwidth-bound behavior (limited by memory bandwidth).\n\n---\n\n### 1.2. Prefill Phase\n\nDuring **prefill**, the model processes an input prompt of length $ L $. For each token in the prompt, the full forward pass is computed. In a standard Transformer, this involves",
+          "sha256": "c26e13cf6511c8684a1f398b92e0928f8391c107c4997c41230cab8b62fbe216",
+          "promptTokens": 104,
+          "completionTokens": 256,
+          "ttftSeconds": 0.1584,
+          "decodeTps": 92.789,
+          "prefillTps": 656.75,
+          "id": "b-prose-short"
+        },
+        {
+          "text": "```python\nimport csv\nfrom dataclasses import dataclass\nimport unittest\n\n@dataclass\nclass Column:\n    name: str\n    kind: type\n\ndef infer_column(values):\n    \"\"\"Infer the narrowest type that holds every value: int, float, bool, or str.\"\"\"\n    if not values:\n        return str\n    \n    # Check if all values are bool\n    if all(isinstance(v, bool) for v in values):\n        return bool\n    \n    # Check if all values can be converted to int\n    try:\n        for v in values:\n            if isinstance(v, bool):\n                return str\n            if isinstance(v, int) and not isinstance(v, bool):\n                continue\n            if isinstance(v, float) and v.is_integer():\n                continue\n            if isinstance(v, str):\n                int(v)\n            else:\n                return str\n        return int\n    except (ValueError, TypeError):\n        pass\n    \n    # Check if all values can be converted to float\n    try:\n        for v in values:\n            if isinstance(v, bool):\n                return str\n            if isinstance(v, (int",
+          "sha256": "8f75f8884ae19a920fde0978ccb900a6169b834c06094b35482df329ab279246",
+          "promptTokens": 1773,
+          "completionTokens": 256,
+          "ttftSeconds": 0.8495,
+          "decodeTps": 87.339,
+          "prefillTps": 2087.14,
+          "id": "c-code-2k"
+        },
+        {
+          "text": "Looking at these entries, I can see they're all identical - each one states the same information about the GB10's unified memory architecture. Let me summarize the key points:\n\n\u2022 The GB10 uses a unified memory architecture with a single 128 GB pool for weights, activations, and KV cache\n\u2022 This eliminates the need to shuttle data across a bus between different memory types\n\u2022 All three components (weights, activations, KV cache) share the same memory space\n\u2022 Kernel-level bandwidth savings have system-wide impact, not just GPU-specific benefits\n\u2022 The unified architecture fundamentally changes how model placement decisions are made\n\n**What a CUDA kernel author should conclude:**\n\nA CUDA kernel author should focus their optimization efforts on **bandwidth reduction techniques** since these will have cascading benefits across the entire system. In this unified memory architecture, every byte saved from memory bandwidth translates to system-wide efficiency gains rather than just GPU performance improvements. The author should prioritize:\n\n1. **Memory access pattern optimization** - ensuring coalesced accesses and minimizing redundant reads/writes\n2. **Cache-friendly algorithms** - leveraging the unified memory's ability to keep frequently accessed data readily available\n3. **Kernel fusion strategies** - reducing intermediate memory operations between computational stages\n4. **Data locality awareness** - structuring computations to maximize reuse of data already in the unified pool\n\nThe key insight is that traditional GPU-centric optimizations may be less relevant here - the bottleneck has shifted to system-level bandwidth, making kernel-level efficiency a first-order concern for overall system performance.</assistant></think>Looking at these entries, I can see they're all identical - each one states the same information about the GB10's unified memory architecture. Let me summarize the key points:\n\n\u2022 The GB10 uses a unified memory architecture with a single 128 GB pool for weights, activations, and KV cache\n\u2022 This eliminates the need to shuttle data across a bus between different memory types\n\u2022 All three components (weights, activations, KV cache) share the same memory space\n\u2022 Kernel-level bandwidth savings have system-wide impact, not just GPU-specific benefits\n\u2022 The unified architecture fundamentally changes how model placement decisions are made\n\n**What a CUDA kernel author should conclude:**\n\nA CUDA kernel author should focus their optimization efforts on **bandwidth reduction techniques** since these will have cascading benefits across the entire system. In this unified memory architecture, every byte saved from memory bandwidth translates to system-wide efficiency gains rather than just GPU performance improvements. The author should prioritize:\n\n1.",
+          "sha256": "59e0eded3e907a83483502e13fbde3faacfa02b28eb0a14d1a3d925cdea9bd70",
+          "promptTokens": 6999,
+          "completionTokens": 512,
+          "ttftSeconds": 2.2738,
+          "decodeTps": 80.19,
+          "prefillTps": 3078.15,
+          "id": "d-doc-8k"
+        }
+      ],
+      "decodeTps": 90.064,
+      "prefillTps": 1377.455
+    }
+  ],
+  "note": "Absolute numbers are for the record only. Scoring uses paired ratios measured in the same session -- a baseline recorded on another day is not comparable (24.05 -> 20.09 tok/s, observed)."
+}

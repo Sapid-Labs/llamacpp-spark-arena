@@ -8,6 +8,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
+# DGX OS puts nvcc in /usr/local/cuda/bin, which a non-interactive shell (i.e.
+# every `ssh spark ./setup.sh`) does not have on PATH. Without this, cmake dies
+# with "No CMAKE_CUDA_COMPILER could be found" on a box that has a perfectly
+# good CUDA 13 toolkit.
+if ! command -v nvcc >/dev/null && [ -x /usr/local/cuda/bin/nvcc ]; then
+  export PATH="/usr/local/cuda/bin:$PATH"
+fi
+
 jq_get() { python3 -c "import json,sys;d=json.load(open('benchmark.json'));print(eval(sys.argv[1],{'d':d}))" "$1"; }
 
 REPO=$(jq_get "d['vendor']['repo']")

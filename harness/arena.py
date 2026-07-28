@@ -191,9 +191,20 @@ def tree_fingerprint(tree: Path):
     return h.hexdigest()[:16]
 
 
+def ensure_cuda_on_path():
+    """DGX OS keeps nvcc in /usr/local/cuda/bin, which non-interactive shells
+    (every `ssh spark python3 harness/arena.py ...`) do not have on PATH."""
+    if shutil.which("nvcc"):
+        return
+    cuda_bin = "/usr/local/cuda/bin"
+    if Path(cuda_bin, "nvcc").exists():
+        os.environ["PATH"] = f"{cuda_bin}:{os.environ.get('PATH', '')}"
+
+
 def build(tree: Path, label):
     if not tree.exists():
         die(f"{tree} is missing -- run ./setup.sh first")
+    ensure_cuda_on_path()
     stamp = tree / ".arena-build-fingerprint"
     fp = tree_fingerprint(tree)
     binary = tree / "build" / "bin" / "llama-server"

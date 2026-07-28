@@ -69,6 +69,14 @@ At **batch size 1, warm**, greedy output on this engine is deterministic —
 measured 2026-07-28 on a Spark, 24/24 runs byte-identical. So "did this change
 alter the output?" is answerable for free, with no eval.
 
+It survives a server restart, which is the property the arena actually needs.
+Recording this target's baseline ran two independent arms — separate
+`llama-server` boots, separate warmups, an hour apart — and all four prompts
+produced **identical sha256 across both**. (vLLM does not do this: greedy
+determinism there holds *within* a server, not across boots.) Absolute speed
+was stable to 0.05% between the arms — 92.913 vs 92.864 tok/s — so the noise
+floor is far below any win worth submitting.
+
 The boundary is hard. Sweeping only concurrency on vLLM 0.26.0 on the same
 hardware: `n=1 → 1 distinct output, n=2 → 2, n=6 → 5`. **Any batching breaks
 token identity**, which is why the ranked track is serial and every target
@@ -94,9 +102,9 @@ to actually happen.
 A submission names the targets it claims to improve. **Engine-general changes
 score across all targets; model-specific ones score on one.**
 
-| Target | Shape | Exercises |
-|---|---|---|
-| `laguna-xs-2-1-q4-k-m` | 33B MoE, ~3B active, Q4_K_M | MoE routing, Q4_K matmul, flash attention |
+| Target | Shape | Exercises | Baseline (Spark-1) |
+|---|---|---|---|
+| `laguna-xs-2-1-q4-k-m` | 33B MoE, ~3B active, Q4_K_M | MoE routing, Q4_K matmul, flash attention | 90.09 tok/s decode, 1384.6 tok/s prefill |
 
 Which targets move is a free blast-radius check on the claim:
 

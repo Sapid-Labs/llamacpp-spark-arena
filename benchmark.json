@@ -85,7 +85,15 @@
       "metric": "nvidia-smi --query-gpu=temperature.gpu",
       "maxStartTempC": 46,
       "maxWaitSeconds": 900,
-      "note": "mlxfast uses a fixed 40 C. The Spark idles around 43 C (measured 43 on Spark-1, 2026-07-28) and has been observed at 84 C under sustained load while its sibling idled at 43, so 40 is unreachable and copying it would deadlock the gate."
+      "note": "mlxfast uses a fixed 40 C. The Spark idles around 43 C and has been observed at 84 C under sustained load while its sibling idled at 43, so 40 is unreachable and copying it would deadlock the gate.",
+      "measured": {
+        "on": "2026-07-28, Spark-1, laguna-xs-2-1-q4-k-m",
+        "idleC": 43,
+        "armStartC": 46,
+        "armEndC": 56,
+        "coolbackSeconds": 60,
+        "note": "Two consecutive baseline arms both ran 46 -> 56 C and both took ~60 s to fall back under the ceiling. A ranked arm heats this part by 10 C, repeatably. 46 costs about a minute of waiting per arm and is what makes the arms comparable; do not raise it to save that minute."
+      }
     }
   },
 
