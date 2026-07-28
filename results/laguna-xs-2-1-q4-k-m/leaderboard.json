@@ -1,0 +1,26 @@
+{
+  "contractVersion": 1,
+  "target": "laguna-xs-2-1-q4-k-m",
+  "targetName": "Laguna-XS 2.1 Q4_K_M",
+  "recipe": "laguna-xs-2-1-q4-k-m",
+  "engine": "llama.cpp",
+  "hardware": "NVIDIA DGX Spark",
+  "vendorPin": "7ad9bd2",
+  "origin": {
+    "recordedAt": "2026-07-28T18:09:08+00:00",
+    "node": "spark-05cc",
+    "buildInfo": "b9902-7ad9bd259",
+    "decodeTps": 90.08675,
+    "prefillTps": 1384.63,
+    "note": "The frontier is measured against THIS. Every cumulative number on the chart is a product of paired ratios back to here."
+  },
+  "current": {
+    "decodeTps": 90.08675,
+    "prefillTps": 1384.63,
+    "cumulativeDecodeSpeedup": 1.0,
+    "cumulativePrefillSpeedup": 1.0,
+    "cumulativeScore": 1.0,
+    "promotionCount": 0
+  },
+  "promotions": []
+}

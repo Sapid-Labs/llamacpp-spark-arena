@@ -1,7 +1,9 @@
 {
   "slug": "laguna-xs-2-1-q4-k-m",
   "name": "Laguna-XS 2.1 Q4_K_M",
-  "recipe": "https://howtospark.com/recipes/laguna-xs-2-1-q4-k-m",
+  "recipe": "laguna-xs-2-1-q4-k-m",
+  "recipeUrl": "https://howtospark.com/recipes/laguna-xs-2-1-q4-k-m",
+  "recipeNote": "`recipe` is a howtospark.com recipe SLUG, not a URL -- it is the join key. The site validates it on sync and refuses a target that names a recipe which does not exist, the same way it already refuses a benchmark row with an unknown recipe.",
   "why": "A 33B MoE with ~3B active, quantized to Q4_K_M including attention. It exercises the MoE kernels (mmid.cu, topk-moe.cu, add-id.cu), the Q4_K matmul path (mmq.cu, mmvq.cu) and flash attention (fattn*.cu) all at once, and it is served at --parallel 1 in the published recipe -- so the deterministic regime the arena needs is the regime the recipe already documents.",
 
   "modelName": "poolside/Laguna-XS-2.1",
