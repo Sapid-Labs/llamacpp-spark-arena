@@ -762,6 +762,17 @@ def cmd_promote(args):
             "prefillSpeedup": round(cum_prefill, 5),
             "score": round(cum_score, 5),
             "percentFaster": round((cum_decode - 1) * 100, 2),
+            # Absolutes projected from the origin through the ratio chain, so a
+            # leaderboard row can show tok/s without anyone re-measuring an old
+            # submission on today's thermals.
+            "decodeTps": round(lb["origin"]["decodeTps"] * cum_decode, 3),
+            "prefillTps": round(lb["origin"]["prefillTps"] * cum_prefill, 2),
+            # What THIS solver added, in percentage points of the headline. Not
+            # the same as (decodeSpeedup - 1): a x1.01 win on top of a x1.37
+            # frontier adds 1.4pp, not 1.0pp. This is the number the leaderboard
+            # shows in green, and getting it from the ratio would understate
+            # every late win.
+            "addedPct": round((cum_decode - prev["cumulativeDecodeSpeedup"]) * 100, 2),
         },
         "verification": {
             "node": record["node"],
