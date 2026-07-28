@@ -99,6 +99,23 @@
         "coolbackSeconds": 60,
         "note": "Two consecutive baseline arms both ran 46 -> 56 C and both took ~60 s to fall back under the ceiling. A ranked arm heats this part by 10 C, repeatably. 46 costs about a minute of waiting per arm and is what makes the arms comparable; do not raise it to save that minute."
       }
+    },
+    "multiNode": {
+      "supported": true,
+      "note": "A target may declare nodeCount > 1. Plenty of Spark owners have two or more, and clustered recipes (TP2 over ConnectX, llama.cpp RPC) are a first-class part of the corpus -- an arena that only ranks single-node work would exclude the recipes that most need kernel help.",
+      "requirements": [
+        "Every node passes the thermal gate before an arm starts, not just the head. One hot worker is enough to make a paired ratio meaningless, and it is the node you are not watching.",
+        "The candidate tree is synced to every node before its arm. A worker still running the base build silently measures a mixed cluster -- the worst failure mode here, because it produces a plausible number rather than an error.",
+        "Every node is verified idle. On a 2-node run the head is the one you notice; the worker is where somebody else's job hides.",
+        "The interconnect is declared and checked (a 200G ConnectX link that negotiated 10/100 has happened on this fleet, and it looks like a kernel regression)."
+      ],
+      "blockedOn": "Whether greedy token identity survives a collective (NCCL allreduce under TP). Unmeasured. Concurrency already breaks identity at n=2 on one node, so this cannot be assumed -- and it is a property of the collective, not of any one model, so one measurement settles it for every multi-node target."
+    },
+    "crossBootIdentity": {
+      "why": "Gates 2 and 3 compare a BASE-tree server against a CANDIDATE-tree server. Those are two processes, so the whole cheap gate rests on greedy output surviving a restart -- not merely on it being stable within one server.",
+      "llamaCpp": "HOLDS. Two boots an hour apart, separate warmups, 4/4 prompts byte-identical (2026-07-28). This is the load-bearing property of the arena, not a bonus.",
+      "vllm": "HOLDS under a pinned serve config (2026-07-28, supersedes the 07-27 finding). Three boots of Qwen3.6-27B-NVFP4 on 0.26.0 were identical across boots both with --enforce-eager and with cudagraphs on, so capture is not the cause and a deterministic vLLM config does not have to pay eager execution. The pins that matter: --max-num-seqs 1, --kv-cache-memory-bytes, --max-model-len, --gpu-memory-utilization and a shared VLLM_CACHE_ROOT. The earlier five-boot failure used --max-num-seqs 4, which is the prime suspect -- batch shape already flips the argmax on this part at n=2.",
+      "consequence": "A vLLM arena is possible. The difference from llama.cpp is that vLLM must publish a PINNED SERVE CONFIG as part of the measurement contract, the same way it publishes the prompt set -- llama.cpp is cross-boot identical under an ordinary serve command."
     }
   },
   "policy": {
