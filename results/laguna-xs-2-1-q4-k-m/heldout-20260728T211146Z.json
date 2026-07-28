@@ -1,0 +1,69 @@
+{
+  "contractVersion": 1,
+  "gate": "held-out-token-identity",
+  "target": "laguna-xs-2-1-q4-k-m",
+  "at": "2026-07-28T21:11:46+00:00",
+  "node": "spark-05cc",
+  "referee": "joe",
+  "vendorCommit": "7ad9bd2",
+  "changedFiles": [
+    "ggml/src/ggml-cuda/norm.cu"
+  ],
+  "seed": "385057d1ed19f3dbc4e0ef19c478028a",
+  "promptCount": 6,
+  "promptIds": [
+    "heldout-00",
+    "heldout-01",
+    "heldout-02",
+    "heldout-03",
+    "heldout-04",
+    "heldout-05"
+  ],
+  "passed": false,
+  "mismatches": [
+    {
+      "id": "heldout-00",
+      "baseSha256": "5d10da4d531b276d4359a8f5cd3f0e06eac86c827746feb781114a92f3c12545",
+      "candidateSha256": "b4b18779d756786ea89199fb41dd4aee439c0c614d85f1bff6919360c0c51b53",
+      "baseTokens": 384,
+      "candidateTokens": 384
+    },
+    {
+      "id": "heldout-01",
+      "baseSha256": "7b7441beae046a05a3d1010d64f8beaec6b769b3bbd93b8ea09282fa6afd755c",
+      "candidateSha256": "b1611e555ddfa88e7647e19f9b0d070ce2f24f548fa796a33ce71c7a4d63c672",
+      "baseTokens": 384,
+      "candidateTokens": 384
+    },
+    {
+      "id": "heldout-02",
+      "baseSha256": "93dcddbd3eba9c1506abbc7597bfd12dcf304b871bfec22be98cce2791c951b3",
+      "candidateSha256": "9b6a1ff6c051b2279d10856002d7c99f5fa363065bf74c8056620f5f36a29fb2",
+      "baseTokens": 384,
+      "candidateTokens": 384
+    },
+    {
+      "id": "heldout-03",
+      "baseSha256": "c9444f7e04ca01e8678e03f0feed0d8861f6b7a6163665f9e80c9c5cc3cee817",
+      "candidateSha256": "cc5cea90eff96e1376518bc908526676f71e79d50e26ac9e56784309df0f2620",
+      "baseTokens": 384,
+      "candidateTokens": 384
+    },
+    {
+      "id": "heldout-04",
+      "baseSha256": "e62717d10491726987e3669c671bf450e67afee62342b064b3bf5571072156a8",
+      "candidateSha256": "0cbf63ef9e111dde5330a9a0021987b98cd5d7f97fc3f30753ed7b051da17daf",
+      "baseTokens": 384,
+      "candidateTokens": 384
+    },
+    {
+      "id": "heldout-05",
+      "baseSha256": "c6b6945116246c9e73b539c3e2c77c0663bb35d1b0cbfcf96336b1702f6d2198",
+      "candidateSha256": "098ca9b90fdec67755924fdeb91d270f93fe1c1908888ef62d4fa2ab035232d0",
+      "baseTokens": 384,
+      "candidateTokens": 384
+    }
+  ],
+  "regenerate": "python3 harness/arena.py heldout --target laguna-xs-2-1-q4-k-m --seed 385057d1ed19f3dbc4e0ef19c478028a --count 6",
+  "note": "Prompts are generated from the seed, never stored. Regenerating with the same seed reproduces them exactly; without the record they cannot be known in advance."
+}

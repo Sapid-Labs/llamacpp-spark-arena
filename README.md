@@ -63,6 +63,65 @@ Gate 3 is the one that matters most and the one you cannot run: it catches a
 kernel that reassociated its way into a different argmax on everything except
 the prompts it was tuned against.
 
+### How gate 3 works without a secret
+
+Held-out prompts have to be unknowable to the submitter, and this repo is
+public. Storing them does not work — a file here is visible, and a gitignored
+file on the referee's node is a static set that leaks a little with every
+verification.
+
+So they are **not stored at all**. They are generated from a random seed at
+verification time, and the seed is written into the result:
+
+```bash
+python3 harness/arena.py heldout --target laguna-xs-2-1-q4-k-m
+#   seed d49e430528782b725d8c3803065be02d
+#   heldout-00 … heldout-05     137 → 2,666 prompt tokens, 384 out
+#   PASS gate 3 (6/6 identical on unseen prompts)
+```
+
+Nobody — including the referee — knows the prompts in advance. Anyone can
+regenerate them afterwards from the recorded seed to audit a disputed
+verification. **Unknowable ahead, reproducible behind.**
+
+No goldens are stored either: the base arm computes them in the same session,
+back to back with the candidate, which is also what makes them impossible to
+tune against. Prompt length is varied deliberately (a short interactive prompt,
+a couple of KB, and one long enough to reach a different attention tile),
+because prompt length picks the flash-attention path and code-vs-prose changes
+which experts a MoE routes to. A held-out set that is all one shape gates one
+code path.
+
+Promotion requires the **record**, not a claim:
+
+```bash
+./submit.sh … && python3 harness/arena.py promote \
+    --target <t> --record results/<t>/<bench>.json \
+    --held-out-record results/<t>/heldout-<stamp>.json
+```
+
+`promote` refuses a record that failed, one produced against a *different diff*
+than the bench record, or none at all — and `--force` does not override a
+failure. Verifying one diff and promoting another is the obvious way to launder
+a submission.
+
+### Gate 3, demonstrated
+
+Both outcomes are committed in `results/laguna-xs-2-1-q4-k-m/`, from the same
+one-line change to `rms_norm_f32` in `ggml/src/ggml-cuda/norm.cu`:
+
+| Change | Gate 1 | Gate 2 (public) | Gate 3 (unseen) | Speedup |
+|---|---|---|---|---|
+| `rsqrtf(x)` → `1.0f/sqrtf(x)` | pass | **4/4 identical** | **6/6 identical** | x1.0016 |
+| `rsqrtf(x) * 1.001f` | pass | 0/4 identical | 0/6 identical | x1.0036 |
+
+The first is a real result worth knowing: swapping CUDA's fast reciprocal
+square root for the correctly-rounded division changes **nothing** on this
+model — the argmax has margin. The second is a 0.1% perturbation, and it is
+rejected *despite passing the speedup floors at x1.0036 decode*. A change that
+looks like a win is refused purely on output identity, which is the whole
+design.
+
 ## Why a token diff is enough
 
 At **batch size 1, warm**, greedy output on this engine is deterministic —
@@ -145,5 +204,7 @@ that gets safer with volume.
 
 ## Status
 
-Early. Chunks 01–03 of the build plan: engine pinned, harness written, first
-target defined. The baseline record for `laguna-xs-2-1-q4-k-m` lands next.
+Early, but the gate chain is real and tested end to end: engine pinned, harness
+written, first target measured, and all five gates demonstrated on an actual
+kernel edit. What is missing is a second target (for blast-radius power) and the
+submission queue — see the build plan.

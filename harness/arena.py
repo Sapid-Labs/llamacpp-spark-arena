@@ -205,7 +205,11 @@ def build(tree: Path, label):
     if not tree.exists():
         die(f"{tree} is missing -- run ./setup.sh first")
     ensure_cuda_on_path()
-    stamp = tree / ".arena-build-fingerprint"
+    # Outside the vendor tree on purpose: anything the harness writes in there
+    # shows up as an untracked file and trips gate 1 on the submitter's own
+    # diff. (Found by gate 1, on the harness itself.)
+    stamp = ROOT / "results" / "_build" / f"{tree.name}.fingerprint"
+    stamp.parent.mkdir(parents=True, exist_ok=True)
     fp = tree_fingerprint(tree)
     binary = tree / "build" / "bin" / "llama-server"
     if binary.exists() and stamp.exists() and stamp.read_text().strip() == fp:
@@ -642,6 +646,160 @@ def cmd_bench(args):
     sys.exit(0 if record["promotable"] else 1)
 
 
+
+# ------------------------------------------------------------ held-out prompts
+
+# Gate 3 needs prompts the submitter has never seen, on a PUBLIC repo. Storing
+# them is the obvious approach and the wrong one: a file in the repo is visible,
+# a gitignored file on the referee's node is a static set that leaks a little
+# with every verification, and either way there is nothing to show a sceptic
+# afterwards.
+#
+# So they are not stored at all. They are GENERATED from a random seed at
+# verification time, and the seed is recorded in the result. Nobody — including
+# the referee — can know the prompts in advance, and anybody can regenerate them
+# afterwards from the seed to audit a disputed verification. Unknowable ahead,
+# reproducible behind.
+#
+# Content is deliberately varied in shape and length rather than random noise:
+# prompt length picks the flash-attention tile and the prefill path, and code vs
+# prose changes which experts a MoE routes to. A held-out set that is all one
+# shape gates one code path.
+
+_HELDOUT_TOPICS = [
+    "a ring buffer with a lock-free single-producer path",
+    "a tokenizer that merges byte pairs from a frozen vocabulary",
+    "a scheduler that admits requests under a fixed memory budget",
+    "a parser for a small configuration language with includes",
+    "a cache with time-to-live eviction and hit-rate accounting",
+    "a diff algorithm over lines with a configurable context window",
+    "a rate limiter using a sliding window over timestamps",
+    "a binary format reader that validates a header before mmap",
+]
+
+_HELDOUT_SUBJECTS = [
+    "why memory bandwidth, not FLOPs, sets decode speed on a unified-memory part",
+    "how a mixture-of-experts model routes a token and what that costs in reads",
+    "what a KV cache actually stores, and why sliding-window attention shrinks it",
+    "why the first request after a server start is not comparable to the rest",
+    "how quantization scope, not bit width alone, decides a model's decode rate",
+    "what a speculative draft has to get right for acceptance to stay high",
+    "why greedy decoding can still be non-deterministic once a batch forms",
+    "how thermal drift corrupts an unpaired throughput comparison",
+]
+
+
+def _heldout_rand(seed_hex, *parts):
+    """Deterministic 64-bit stream from the seed and a label. Stdlib only, and
+    stable across Python versions -- hash() is not."""
+    h = hashlib.sha256(seed_hex.encode())
+    for p in parts:
+        h.update(b"\x00")
+        h.update(str(p).encode())
+    return int.from_bytes(h.digest()[:8], "big")
+
+
+def generate_heldout_prompts(target, seed_hex, count):
+    """`count` prompts, fully determined by (seed_hex, target slug, index)."""
+    prompts = []
+    for i in range(count):
+        r = lambda *k: _heldout_rand(seed_hex, target["_slug"], i, *k)
+        # Spread lengths across the shapes the target actually serves: a short
+        # interactive prompt, a couple of KB, and something long enough to reach
+        # a different attention tile.
+        length_class = i % 3
+        n_filler = (0, 12, 90)[length_class] + r("filler") % 8
+        if r("kind") % 2 == 0:
+            topic = _HELDOUT_TOPICS[r("topic") % len(_HELDOUT_TOPICS)]
+            task = (f"Write a complete, working Python implementation of {topic}. "
+                    f"Include type hints, docstrings, and unittest test cases. "
+                    f"Output only code.")
+        else:
+            subject = _HELDOUT_SUBJECTS[r("subject") % len(_HELDOUT_SUBJECTS)]
+            task = (f"Explain in careful technical prose: {subject}. "
+                    f"Work through the arithmetic where it matters and state "
+                    f"what you would measure to check the claim.")
+        filler = "".join(
+            f"Note {j} (ref {r('ref', j) % 100000:05d}): "
+            f"{_HELDOUT_SUBJECTS[r('fs', j) % len(_HELDOUT_SUBJECTS)]}. "
+            for j in range(n_filler)
+        )
+        text = (f"{filler}\n\nIgnore the notes above.\n\n{task}" if filler else task)
+        prompts.append({
+            "id": f"heldout-{i:02d}",
+            "text": text,
+            # Longer than the public set: every extra token is another chance
+            # for a reassociated kernel to fall off a different argmax.
+            "maxTokens": target.get("heldOutMaxTokens", 384),
+        })
+    return prompts
+
+
+def cmd_heldout(args):
+    """Gate 3: paired token identity on prompts nobody has seen.
+
+    Runs base and candidate back to back on freshly generated prompts and
+    compares output hashes. No goldens are stored or needed -- the base arm
+    computes them in the same session, which is also what makes them impossible
+    to tune against.
+    """
+    target = load_target(args.target)
+    seed = args.seed or os.urandom(16).hex()
+    prompts = generate_heldout_prompts(target, seed, args.count)
+
+    Out.step(f"gate 3: held-out token identity ({args.count} generated prompts)")
+    Out.info(f"seed {seed}")
+    Out.info("the seed is recorded in the result, so these prompts can be "
+             "regenerated to audit this verification -- but not before it")
+
+    base_bin = build(BASE_TREE, "base tree")
+    cand_bin = build(CAND_TREE, "candidate tree")
+
+    base_arm = run_arm(base_bin, target, prompts, "held-out baseline", "heldout-base")
+    cand_arm = run_arm(cand_bin, target, prompts, "held-out candidate", "heldout-cand")
+
+    mismatches = []
+    for b, c in zip(base_arm["prompts"], cand_arm["prompts"]):
+        if b["sha256"] != c["sha256"]:
+            mismatches.append({
+                "id": b["id"],
+                "baseSha256": b["sha256"],
+                "candidateSha256": c["sha256"],
+                "baseTokens": b["completionTokens"],
+                "candidateTokens": c["completionTokens"],
+            })
+            Out.fail(f"{b['id']}: output differs ({b['sha256'][:12]} -> {c['sha256'][:12]})")
+    passed = not mismatches
+    if passed:
+        Out.ok(f"gate 3 ({len(prompts)}/{len(prompts)} identical on unseen prompts)")
+
+    record = {
+        "contractVersion": CONTRACT["contractVersion"],
+        "gate": "held-out-token-identity",
+        "target": target["_slug"],
+        "at": now_iso(),
+        "node": os.uname().nodename,
+        "referee": args.referee,
+        "vendorCommit": CONTRACT["vendor"]["commit"],
+        "changedFiles": vendor_diff_files(),
+        "seed": seed,
+        "promptCount": args.count,
+        "promptIds": [p["id"] for p in prompts],
+        "passed": passed,
+        "mismatches": mismatches,
+        "regenerate": (f"python3 harness/arena.py heldout --target {target['_slug']} "
+                       f"--seed {seed} --count {args.count}"),
+        "note": "Prompts are generated from the seed, never stored. Regenerating "
+                "with the same seed reproduces them exactly; without the record "
+                "they cannot be known in advance.",
+    }
+    out = ROOT / "results" / target["_slug"] / f"heldout-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(record, indent=2) + "\n")
+    Out.info(f"written to {out.relative_to(ROOT)}")
+    sys.exit(0 if passed else 1)
+
+
 # ------------------------------------------------------------- leaderboard
 
 def leaderboard_path(target):
@@ -714,13 +872,38 @@ def cmd_promote(args):
     if not record.get("promotable") and not args.force:
         failed = [k for k, v in record["gates"].items() if not v]
         die(f"record did not pass its own gates ({', '.join(failed) or 'score <= 1.0'})")
-    if not args.held_out_verified and not args.force:
-        die("gate 3 (held-out token identity) is not recorded as run.\n"
-            "    Run the held-out prompts on the referee's node, then pass "
-            "--held-out-verified. This is the gate that catches a kernel which "
-            "reassociated its way into a different argmax on everything except "
-            "the prompts it was tuned against -- promoting without it is the one "
-            "shortcut that silently corrupts the corpus.")
+    # Gate 3 must be BACKED BY A RECORD, not asserted. A boolean flag is a
+    # promise; a record names the seed, the node and the changed files, so the
+    # verification can be reproduced by anyone later. "Verified" is granted, not
+    # owed -- and a claim nobody can re-check is not a grant.
+    held_out = None
+    if args.held_out_record:
+        held_out = json.loads(Path(args.held_out_record).read_text())
+        if held_out.get("gate") != "held-out-token-identity":
+            die(f"{args.held_out_record} is not a held-out verification record")
+        if held_out["target"] != target["_slug"]:
+            die(f"held-out record is for target '{held_out['target']}'")
+        if not held_out.get("passed"):
+            die(f"held-out verification FAILED on {len(held_out.get('mismatches', []))} "
+                f"prompt(s) — this candidate changes output on inputs it was not "
+                f"tuned against, which is exactly what gate 3 exists to catch.")
+        # The record has to describe THIS candidate. Verifying one diff and
+        # promoting another is the obvious way to launder a failing submission.
+        if sorted(held_out.get("changedFiles", [])) != sorted(record.get("changedFiles", [])):
+            die("held-out record was produced against a different diff than the "
+                "bench record.\n    heldout : "
+                f"{sorted(held_out.get('changedFiles', []))}\n    bench   : "
+                f"{sorted(record.get('changedFiles', []))}\n"
+                "    Re-run both against the same tree.")
+    elif not args.force:
+        die("gate 3 (held-out token identity) has no verification record.\n"
+            "    Run it on the referee's node:\n"
+            f"      python3 harness/arena.py heldout --target {target['_slug']}\n"
+            "    then pass --held-out-record results/<target>/heldout-<stamp>.json.\n"
+            "    This is the gate that catches a kernel which reassociated its way "
+            "into a different argmax on everything except the prompts it was tuned "
+            "against -- promoting without it is the one shortcut that silently "
+            "corrupts the corpus.")
 
     lb = load_leaderboard(target, create=True)
     seq = len(lb["promotions"]) + 1
@@ -777,7 +960,14 @@ def cmd_promote(args):
         "verification": {
             "node": record["node"],
             "gates": record["gates"],
-            "heldOutVerified": bool(args.held_out_verified),
+            "heldOutVerified": bool(held_out and held_out.get("passed")),
+            "heldOut": {
+                "seed": held_out["seed"],
+                "promptCount": held_out["promptCount"],
+                "at": held_out["at"],
+                "node": held_out["node"],
+                "regenerate": held_out["regenerate"],
+            } if held_out else None,
             "referee": args.referee,
         },
     }
@@ -867,10 +1057,19 @@ def main():
     p.add_argument("--scope", choices=["engine-general", "model-specific"], default="model-specific")
     p.add_argument("--also-moved", nargs="*", default=None, help="other targets this moved")
     p.add_argument("--referee", default=None)
-    p.add_argument("--held-out-verified", action="store_true",
-                   help="gate 3 was run on the referee's held-out prompts and passed")
+    p.add_argument("--held-out-record", default=None,
+                   help="path to a passing `heldout` verification record (gate 3)")
     p.add_argument("--force", action="store_true")
     p.set_defaults(fn=cmd_promote)
+
+    h = sub.add_parser("heldout", help="gate 3: token identity on freshly generated prompts")
+    h.add_argument("--target", required=True)
+    h.add_argument("--count", type=int, default=6, help="how many prompts to generate")
+    h.add_argument("--seed", default=None,
+                   help="hex seed; omit for a fresh random one. Pass a recorded "
+                        "seed to reproduce a past verification.")
+    h.add_argument("--referee", default=None)
+    h.set_defaults(fn=cmd_heldout)
 
     l = sub.add_parser("leaderboard", help="print the frontier and its promotion chain")
     l.add_argument("--target", required=True)

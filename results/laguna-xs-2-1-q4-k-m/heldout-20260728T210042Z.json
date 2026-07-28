@@ -1,0 +1,26 @@
+{
+  "contractVersion": 1,
+  "gate": "held-out-token-identity",
+  "target": "laguna-xs-2-1-q4-k-m",
+  "at": "2026-07-28T21:00:42+00:00",
+  "node": "spark-05cc",
+  "referee": "joe",
+  "vendorCommit": "7ad9bd2",
+  "changedFiles": [
+    "ggml/src/ggml-cuda/norm.cu"
+  ],
+  "seed": "d49e430528782b725d8c3803065be02d",
+  "promptCount": 6,
+  "promptIds": [
+    "heldout-00",
+    "heldout-01",
+    "heldout-02",
+    "heldout-03",
+    "heldout-04",
+    "heldout-05"
+  ],
+  "passed": true,
+  "mismatches": [],
+  "regenerate": "python3 harness/arena.py heldout --target laguna-xs-2-1-q4-k-m --seed d49e430528782b725d8c3803065be02d --count 6",
+  "note": "Prompts are generated from the seed, never stored. Regenerating with the same seed reproduces them exactly; without the record they cannot be known in advance."
+}

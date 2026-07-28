@@ -8,7 +8,6 @@
     "cmakeCudaArchitectures": "121",
     "note": "torch.cuda.get_arch_list() on this part returns sm_80/90/100/110/120 -- nothing is built for 12.1. That gap is the point of this arena."
   },
-
   "vendor": {
     "repo": "https://github.com/Sapid-Labs/llama.cpp.git",
     "ref": "laguna-support",
@@ -18,9 +17,11 @@
       "commit": "ee445f93d8a0a5033a46d1960e901ef5caec9a41",
       "note": "upstream ggml-org master; the fork carries 5 commits on top of it (laguna arch port + DFlash draft). The arch port is upstreamed as ggml-org/llama.cpp#25595, unmerged at pin time. 'What changed vs stock' = these 5 commits plus your diff."
     },
-    "buildFlags": ["-DGGML_CUDA=ON", "-DCMAKE_CUDA_ARCHITECTURES=121"]
+    "buildFlags": [
+      "-DGGML_CUDA=ON",
+      "-DCMAKE_CUDA_ARCHITECTURES=121"
+    ]
   },
-
   "editablePaths": [
     "ggml/src/ggml-cuda/**",
     "ggml/src/ggml.c",
@@ -30,7 +31,6 @@
     "src/llama-graph.h"
   ],
   "editablePathsNote": "CUDA kernels and the model graph. Deliberately NOT editable: tools/server (the thing being measured), common/, tests/, and the CMake build definition -- a submission that changes how it is timed is not a submission.",
-
   "gates": [
     {
       "id": "editable-surface",
@@ -45,7 +45,12 @@
     {
       "id": "held-out-token-identity",
       "order": 3,
-      "rule": "Same, on prompts the submitter has never seen. Run by the referee only. Catches a kernel that reassociated its way into a different argmax everywhere except the prompts it was tuned against."
+      "rule": "Same, on prompts the submitter has never seen. Run by the referee only.",
+      "mechanism": "Prompts are GENERATED from a random seed at verification time, never stored. A file in a public repo is visible; a gitignored file on the referee's node is a static set that leaks a little with every verification. Generating instead means nobody -- including the referee -- knows the prompts in advance, and the seed is recorded in the result so anyone can regenerate them afterwards to audit a disputed verification. Unknowable ahead, reproducible behind.",
+      "goldens": "None are stored. The base arm computes them in the same session, back to back with the candidate -- which is also what makes them impossible to tune against.",
+      "command": "python3 harness/arena.py heldout --target <target>",
+      "promotionRequires": "A passing record file, not a flag. `promote --held-out-record <path>` checks the record targets the same slug AND was produced against the same changed files as the bench record -- verifying one diff and promoting another is the obvious way to launder a failing submission.",
+      "catches": "A kernel that reassociated its way into a different argmax on everything except the prompts it was tuned against."
     },
     {
       "id": "speedup-floors",
@@ -58,7 +63,6 @@
       "rule": "score > current leaderboard score for every target claimed."
     }
   ],
-
   "scoring": {
     "formula": "decode_speedup^0.75 * prefill_speedup^0.25",
     "decodeExponent": 0.75,
@@ -68,10 +72,11 @@
     "pairs": 2,
     "aggregate": "median of per-pair ratios"
   },
-
   "measurement": {
     "batchSize": 1,
-    "serverFlags": ["--parallel 1"],
+    "serverFlags": [
+      "--parallel 1"
+    ],
     "warmupRequests": 1,
     "warmupDiscarded": true,
     "warmupNote": "The first request after server start differs on BOTH engines. Discard it or every comparison reports a phantom mismatch.",
@@ -96,7 +101,6 @@
       }
     }
   },
-
   "policy": {
     "optimizationVsRecipe": "Optimizations preserve output and get the cheap gate. Changes that alter output (precision, quantization, sampling) are a new RECIPE, not an arena submission, and need eval evidence on howtospark.com.",
     "scoreScope": "A submission names the targets it claims. Engine-general changes score across all targets; model-specific ones score on one. A claim of 'faster Q4_K MoE matmul' where a dense Q8_0 target also moves is incoherent and does not promote.",

@@ -13,6 +13,7 @@ targets/*/goldens-heldout.json
 targets/*/goldens/
 
 results/_logs/
+results/_build/
 
 __pycache__/
 *.pyc
