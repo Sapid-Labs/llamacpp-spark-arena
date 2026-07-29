@@ -22,5 +22,6 @@
     "cumulativeScore": 1.0,
     "promotionCount": 0
   },
-  "promotions": []
+  "promotions": [],
+  "repoUrl": "https://github.com/Sapid-Labs/llamacpp-spark-arena"
 }

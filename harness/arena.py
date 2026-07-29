@@ -833,6 +833,7 @@ def load_leaderboard(target, create=False):
         "engine": CONTRACT["engine"],
         "hardware": CONTRACT["hardware"]["name"],
         "vendorPin": CONTRACT["vendor"]["commit"],
+        "repoUrl": CONTRACT.get("repoUrl"),
         "origin": {
             "recordedAt": base["recordedAt"],
             "node": base["node"],

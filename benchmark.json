@@ -122,5 +122,6 @@
     "optimizationVsRecipe": "Optimizations preserve output and get the cheap gate. Changes that alter output (precision, quantization, sampling) are a new RECIPE, not an arena submission, and need eval evidence on howtospark.com.",
     "scoreScope": "A submission names the targets it claims. Engine-general changes score across all targets; model-specific ones score on one. A claim of 'faster Q4_K MoE matmul' where a dense Q8_0 target also moves is incoherent and does not promote.",
     "baselineAfterPromotion": "OPEN QUESTION -- mlxfast re-pins the baseline to the frontier. Until decided, the baseline is the vendor pin above and every score is only meaningful against contractVersion 1."
-  }
+  },
+  "repoUrl": "https://github.com/Sapid-Labs/llamacpp-spark-arena"
 }
