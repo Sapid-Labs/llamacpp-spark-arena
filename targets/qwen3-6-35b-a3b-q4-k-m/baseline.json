@@ -1,0 +1,116 @@
+{
+  "contractVersion": 1,
+  "vendorCommit": "7ad9bd2",
+  "recordedAt": "2026-07-29T14:07:09+00:00",
+  "node": "spark-05cc",
+  "buildInfo": "b9902-7ad9bd259",
+  "decodeTps": 66.60475,
+  "prefillTps": 1201.4499999999998,
+  "arms": [
+    {
+      "label": "baseline",
+      "at": "2026-07-29T14:06:02+00:00",
+      "buildInfo": "b9902-7ad9bd259",
+      "tempStartC": 47.0,
+      "tempEndC": 57.0,
+      "powerEndW": 25.57,
+      "prompts": [
+        {
+          "text": "```python\nimport csv\nfrom dataclasses import dataclass\nimport unittest\n\n\n@dataclass\nclass Column:\n    name: str\n    kind: type\n\n\ndef infer_column(values):\n    \"\"\"Infer the narrowest type that holds every value: int, float, bool, or str.\"\"\"\n    if not values:\n        return str\n\n    # Filter out None values\n    non_none_values = [v for v in values if v is not None]\n\n    if not non_none_values:\n        return str\n\n    # Check if all values are booleans first (before int, since bool is subclass of int)\n    all_bool = all(isinstance(v, bool) for v in non_none_values)\n    if all_bool:\n        return bool\n\n    # Check if all values are ints (but not bools)\n    all_int = all(isinstance(v, int) and not isinstance(v, bool) for v in non_none_values)\n    if all_int:\n        return int\n\n    # Check if all values are floats\n    all_float = all(isinstance(v, float) for v in non_none_values)\n    if all_float:\n        return float\n\n    # Check if all values are strings\n",
+          "sha256": "2f22ed70426acbb5360fb376b03aae036dd2d41c2f66581e9b190bdeaa1ab00a",
+          "promptTokens": 95,
+          "completionTokens": 256,
+          "ttftSeconds": 0.191,
+          "decodeTps": 66.886,
+          "prefillTps": 497.46,
+          "id": "a-code-short"
+        },
+        {
+          "text": "To understand the divergence in throughput behavior between the prefill and decode phases in a Mixture-of-Experts (MoE) model, we must analyze the arithmetic intensity (AI) of each phase and compare it against the hardware\u2019s memory bandwidth and compute limits.\n\n### 1. Definitions and Hardware Constraints\n\nLet:\n- $B$: Batch size (number of tokens processed simultaneously).\n- $N$: Total number of experts.\n- $K$: Number of active experts per token ($K \\ll N$).\n- $D$: Hidden dimension.\n- $F$: Feed-forward expansion factor (e.g., 4 or 8).\n- $W$: Total size of the MoE weight matrix (proportional to $N \\cdot D \\cdot F$).\n- $M$: Memory bandwidth of the GPU (GB/s).\n- $C$: Peak compute throughput of the GPU (TFLOPS).\n\n**Arithmetic Intensity (AI)** is defined as:\n$$\n\\text{AI} = \\frac{\\text{Total FLOPs}}{\\text{Total Bytes Transferred}}\n$$\n\nA kernel is **compute-bound** if $\\text{AI} > \\frac{M}{C}$ (",
+          "sha256": "bc50b035069f03fa975953a5388082ba6b92b9ae9d72fbc2a40720cfbffa202d",
+          "promptTokens": 75,
+          "completionTokens": 256,
+          "ttftSeconds": 0.1657,
+          "decodeTps": 67.056,
+          "prefillTps": 452.69,
+          "id": "b-prose-short"
+        },
+        {
+          "text": "```python\nimport csv\nfrom dataclasses import dataclass\nimport unittest\nfrom typing import List, Any, Optional\n\n@dataclass\nclass Column:\n    name: str\n    kind: type\n\ndef infer_column(values: List[Any]) -> Column:\n    \"\"\"Infer the narrowest type that holds every value: int, float, bool, or str.\"\"\"\n    if not values:\n        return Column(name=\"\", kind=str)\n    \n    # Filter out None values for type inference, but keep track if all are None\n    non_none_values = [v for v in values if v is not None]\n    \n    if not non_none_values:\n        return Column(name=\"\", kind=str)\n    \n    # Check for bool first because bool is a subclass of int in Python\n    # If any value is bool, the column is likely bool (unless mixed with int, but usually bool is distinct)\n    # However, standard inference: if all are bool, return bool.\n    # If mixed bool and int, it's tricky. Let's assume strict typing:\n    # If any bool is present, and others are not int-only, it might be object.\n    # But the prompt asks for int,",
+          "sha256": "dc215fba19f257133095b4b9e1146e452d2dbdcfc3997638a0dd4769af05f931",
+          "promptTokens": 1717,
+          "completionTokens": 256,
+          "ttftSeconds": 0.9133,
+          "decodeTps": 66.432,
+          "prefillTps": 1879.93,
+          "id": "c-code-2k"
+        },
+        {
+          "text": "Here is the summary of the provided entries and the strategic conclusion for a CUDA kernel author.\n\n### Summary of Entries\n\n*   **Unified Memory Architecture:** The GB10 utilizes a unified memory architecture where weights, activations, and the KV cache all reside in a single 128 GB memory pool, eliminating the need to shuttle data across a separate bus.\n*   **Holistic System Impact:** Because all critical model components share the same memory resource, any optimization that saves bandwidth benefits the entire system, not just the GPU compute units.\n*   **Shift in Reasoning:** This architecture fundamentally changes how model placement and memory management are reasoned about, moving away from isolated GPU-centric optimizations to system-wide bandwidth considerations.\n*   **Bandwidth as a Critical Resource:** In this environment, memory bandwidth is the primary bottleneck and shared constraint, making efficient data access patterns more important than raw compute throughput for overall system performance.\n*   **Kernel-Level Efficiency:** A kernel that reduces memory bandwidth consumption directly improves the performance of the whole system, implying that memory efficiency is the most impactful lever for optimization.\n\n### Conclusion for a CUDA Kernel Author\n\nA CUDA kernel author should conclude that **effort should be spent primarily on minimizing memory bandwidth consumption rather than optimizing compute intensity or arithmetic operations.**\n\nSpecifically:\n1.  **Prioritize Memory Access Patterns:** Focus on coalesced memory accesses, reducing redundant reads/writes, and maximizing data reuse from registers or shared memory to avoid hitting the unified memory pool repeatedly.\n2.  **Optimize for System-Wide Throughput:** Since bandwidth is a shared resource for weights, activations, and KV cache, any kernel that reduces its memory footprint or access frequency will improve performance for all concurrent operations on the GB10.\n3.  **De-emphasize Compute-Only Optimizations:** While compute efficiency matters, the bottleneck is likely memory bandwidth. Therefore, techniques that increase arithmetic intensity (doing more math per byte fetched) are crucial, but pure compute optimizations that do not reduce memory traffic will yield diminishing returns compared to memory-efficient kernels.",
+          "sha256": "99110c03eddb8251144ed9638f578ac3a91bf4a312701cd35517192a61a629a2",
+          "promptTokens": 6865,
+          "completionTokens": 425,
+          "ttftSeconds": 2.697,
+          "decodeTps": 64.294,
+          "prefillTps": 2545.42,
+          "id": "d-doc-8k"
+        }
+      ],
+      "decodeTps": 66.65899999999999,
+      "prefillTps": 1188.695
+    },
+    {
+      "label": "baseline",
+      "at": "2026-07-29T14:07:09+00:00",
+      "buildInfo": "b9902-7ad9bd259",
+      "tempStartC": 49.0,
+      "tempEndC": 59.0,
+      "powerEndW": 27.77,
+      "prompts": [
+        {
+          "text": "```python\nimport csv\nfrom dataclasses import dataclass\nimport unittest\n\n\n@dataclass\nclass Column:\n    name: str\n    kind: type\n\n\ndef infer_column(values):\n    \"\"\"Infer the narrowest type that holds every value: int, float, bool, or str.\"\"\"\n    if not values:\n        return str\n\n    # Filter out None values\n    non_none_values = [v for v in values if v is not None]\n\n    if not non_none_values:\n        return str\n\n    # Check if all values are booleans first (before int, since bool is subclass of int)\n    all_bool = all(isinstance(v, bool) for v in non_none_values)\n    if all_bool:\n        return bool\n\n    # Check if all values are ints (but not bools)\n    all_int = all(isinstance(v, int) and not isinstance(v, bool) for v in non_none_values)\n    if all_int:\n        return int\n\n    # Check if all values are floats\n    all_float = all(isinstance(v, float) for v in non_none_values)\n    if all_float:\n        return float\n\n    # Check if all values are strings\n",
+          "sha256": "2f22ed70426acbb5360fb376b03aae036dd2d41c2f66581e9b190bdeaa1ab00a",
+          "promptTokens": 95,
+          "completionTokens": 256,
+          "ttftSeconds": 0.1814,
+          "decodeTps": 66.802,
+          "prefillTps": 523.79,
+          "id": "a-code-short"
+        },
+        {
+          "text": "To understand the divergence in throughput behavior between the prefill and decode phases in a Mixture-of-Experts (MoE) model, we must analyze the arithmetic intensity (AI) of each phase and compare it against the hardware\u2019s memory bandwidth and compute limits.\n\n### 1. Definitions and Hardware Constraints\n\nLet:\n- $B$: Batch size (number of tokens processed simultaneously).\n- $N$: Total number of experts.\n- $K$: Number of active experts per token ($K \\ll N$).\n- $D$: Hidden dimension.\n- $F$: Feed-forward expansion factor (e.g., 4 or 8).\n- $W$: Total size of the MoE weight matrix (proportional to $N \\cdot D \\cdot F$).\n- $M$: Memory bandwidth of the GPU (GB/s).\n- $C$: Peak compute throughput of the GPU (TFLOPS).\n\n**Arithmetic Intensity (AI)** is defined as:\n$$\n\\text{AI} = \\frac{\\text{Total FLOPs}}{\\text{Total Bytes Transferred}}\n$$\n\nA kernel is **compute-bound** if $\\text{AI} > \\frac{M}{C}$ (",
+          "sha256": "bc50b035069f03fa975953a5388082ba6b92b9ae9d72fbc2a40720cfbffa202d",
+          "promptTokens": 75,
+          "completionTokens": 256,
+          "ttftSeconds": 0.159,
+          "decodeTps": 67.012,
+          "prefillTps": 471.66,
+          "id": "b-prose-short"
+        },
+        {
+          "text": "```python\nimport csv\nfrom dataclasses import dataclass\nimport unittest\nfrom typing import List, Any, Optional\n\n@dataclass\nclass Column:\n    name: str\n    kind: type\n\ndef infer_column(values: List[Any]) -> Column:\n    \"\"\"Infer the narrowest type that holds every value: int, float, bool, or str.\"\"\"\n    if not values:\n        return Column(name=\"\", kind=str)\n    \n    # Filter out None values for type inference, but keep track if all are None\n    non_none_values = [v for v in values if v is not None]\n    \n    if not non_none_values:\n        return Column(name=\"\", kind=str)\n    \n    # Check for bool first because bool is a subclass of int in Python\n    # If any value is bool, the column is likely bool (unless mixed with int, but usually bool is distinct)\n    # However, standard inference: if all are bool, return bool.\n    # If mixed bool and int, it's tricky. Let's assume strict typing:\n    # If any bool is present, and others are not int-only, it might be object.\n    # But the prompt asks for int,",
+          "sha256": "dc215fba19f257133095b4b9e1146e452d2dbdcfc3997638a0dd4769af05f931",
+          "promptTokens": 1717,
+          "completionTokens": 256,
+          "ttftSeconds": 0.9015,
+          "decodeTps": 66.299,
+          "prefillTps": 1904.62,
+          "id": "c-code-2k"
+        },
+        {
+          "text": "Here is the summary of the provided entries and the strategic conclusion for a CUDA kernel author.\n\n### Summary of Entries\n\n*   **Unified Memory Architecture:** The GB10 utilizes a unified memory architecture where weights, activations, and the KV cache all reside in a single 128 GB memory pool, eliminating the need to shuttle data across a separate bus.\n*   **Holistic System Impact:** Because all critical model components share the same memory resource, any optimization that saves bandwidth benefits the entire system, not just the GPU compute units.\n*   **Shift in Reasoning:** This architecture fundamentally changes how model placement and memory management are reasoned about, moving away from isolated GPU-centric optimizations to system-wide bandwidth considerations.\n*   **Bandwidth as a Critical Resource:** In this environment, memory bandwidth is the primary bottleneck and shared constraint, making efficient data access patterns more important than raw compute throughput for overall system performance.\n*   **Kernel-Level Efficiency:** A kernel that reduces memory bandwidth consumption directly improves the performance of the whole system, implying that memory efficiency is the most impactful lever for optimization.\n\n### Conclusion for a CUDA Kernel Author\n\nA CUDA kernel author should conclude that **effort should be spent primarily on minimizing memory bandwidth consumption rather than optimizing compute intensity or arithmetic operations.**\n\nSpecifically:\n1.  **Prioritize Memory Access Patterns:** Focus on coalesced memory accesses, reducing redundant reads/writes, and maximizing data reuse from registers or shared memory to avoid hitting the unified memory pool repeatedly.\n2.  **Optimize for System-Wide Throughput:** Since bandwidth is a shared resource for weights, activations, and KV cache, any kernel that reduces its memory footprint or access frequency will improve performance for all concurrent operations on the GB10.\n3.  **De-emphasize Compute-Only Optimizations:** While compute efficiency matters, the bottleneck is likely memory bandwidth. Therefore, techniques that increase arithmetic intensity (doing more math per byte fetched) are crucial, but pure compute optimizations that do not reduce memory traffic will yield diminishing returns compared to memory-efficient kernels.",
+          "sha256": "99110c03eddb8251144ed9638f578ac3a91bf4a312701cd35517192a61a629a2",
+          "promptTokens": 6865,
+          "completionTokens": 425,
+          "ttftSeconds": 2.6805,
+          "decodeTps": 64.103,
+          "prefillTps": 2561.11,
+          "id": "d-doc-8k"
+        }
+      ],
+      "decodeTps": 66.5505,
+      "prefillTps": 1214.205
+    }
+  ],
+  "note": "Absolute numbers are for the record only. Scoring uses paired ratios measured in the same session -- a baseline recorded on another day is not comparable (24.05 -> 20.09 tok/s, observed)."
+}

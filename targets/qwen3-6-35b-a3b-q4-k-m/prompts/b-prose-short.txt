@@ -1,0 +1,1 @@
+Explain, in careful technical prose, why decode throughput on a bandwidth-bound mixture-of-experts model tracks the size of the weight file almost exactly, while prefill throughput does not. Work through the arithmetic intensity of each phase and say what changes when only 8 of 256 experts fire per token.

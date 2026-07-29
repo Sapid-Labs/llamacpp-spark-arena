@@ -161,9 +161,20 @@ to actually happen.
 A submission names the targets it claims to improve. **Engine-general changes
 score across all targets; model-specific ones score on one.**
 
-| Target | Shape | Exercises | Baseline (Spark-1) |
+| Target | Weights | Shape | Baseline (Spark-1) |
 |---|---|---|---|
-| `laguna-xs-2-1-q4-k-m` | 33B MoE, ~3B active, Q4_K_M | MoE routing, Q4_K matmul, flash attention | 90.09 tok/s decode, 1384.6 tok/s prefill |
+| **`qwen3-6-35b-a3b-q4-k-m`** ← start here | **one public download** | 35B MoE, ~3B active, Q4_K_M | 66.60 tok/s decode |
+| `laguna-xs-2-1-q4-k-m` | ⚠ not published — you must quantize it | 33B MoE, ~3B active, Q4_K_M | 90.09 tok/s decode, 1384.6 prefill |
+
+**Every target must point at weights you can download.** No target may require you
+to produce your own quantization: that puts hours of work and ~88 GB of transient
+disk in front of your first line of CUDA, and a barrier in front of the arena
+costs more than any kernel win inside it. The harness refuses a target with no
+declared weights and warns loudly on one that is not public.
+
+The laguna target predates that rule and is the reason for it. Its Q4_K_M GGUF is
+not published, so it is **not** an entry point until it is — it is kept because it
+carries the measured baseline and the gate-3 demonstration below.
 
 Which targets move is a free blast-radius check on the claim:
 

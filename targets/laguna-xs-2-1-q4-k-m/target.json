@@ -5,27 +5,31 @@
   "recipeUrl": "https://howtospark.com/recipes/laguna-xs-2-1-q4-k-m",
   "recipeNote": "`recipe` is a howtospark.com recipe SLUG, not a URL -- it is the join key. The site validates it on sync and refuses a target that names a recipe which does not exist, the same way it already refuses a benchmark row with an unknown recipe.",
   "why": "A 33B MoE with ~3B active, quantized to Q4_K_M including attention. It exercises the MoE kernels (mmid.cu, topk-moe.cu, add-id.cu), the Q4_K matmul path (mmq.cu, mmvq.cu) and flash attention (fattn*.cu) all at once, and it is served at --parallel 1 in the published recipe -- so the deterministic regime the arena needs is the regime the recipe already documents.",
-
   "modelName": "poolside/Laguna-XS-2.1",
   "seed": 0,
   "port": 8080,
   "defaultMaxTokens": 256,
   "promptSettings": {
-    "d-doc-8k": { "maxTokens": 512 }
+    "d-doc-8k": {
+      "maxTokens": 512
+    }
   },
-
   "serveArgs": [
-    "-m", "~/models/gguf/Laguna-XS-2.1-Q4_K_M.gguf",
-    "-c", "262144",
-    "-ngl", "99",
-    "-fa", "on",
+    "-m",
+    "~/models/gguf/Laguna-XS-2.1-Q4_K_M.gguf",
+    "-c",
+    "262144",
+    "-ngl",
+    "99",
+    "-fa",
+    "on",
     "--jinja",
-    "--reasoning-budget", "0"
+    "--reasoning-budget",
+    "0"
   ],
   "serveArgsNote": "Matches the published recipe minus the DFlash speculator. The draft is deliberately excluded from the ranked track: it adds an acceptance-dependent path between a kernel change and the measured number, and the arena wants the shortest possible line between them. A spec-decoding target can be added later as its own entry. --jinja is mandatory (Laguna's chat template is not expressible in llama.cpp's built-in engine); --reasoning-budget 0 is mandatory or the whole output budget goes to reasoning_content and the harness measures an empty answer.",
   "expectContextTokens": 262144,
   "startupTimeout": 900,
-
   "modelIntegrity": {
     "path": "~/models/gguf/Laguna-XS-2.1-Q4_K_M.gguf",
     "bytes": 20274300128,
@@ -33,14 +37,19 @@
     "verifySha": false,
     "shaNote": "Verified on Spark-1, 2026-07-28. Size is checked on every run; the full hash is opt-in (verifySha) because it costs ~1 min per run -- the referee turns it on, contributors do not need to."
   },
-
   "weightsHint": "No Q4_K_M GGUF is published for this checkpoint -- quantize it yourself. See step 2 of https://howtospark.com/recipes/laguna-xs-2-1-q4-k-m (convert_hf_to_gguf.py from poolside/Laguna-XS-2.1, then llama-quantize to Q4_K_M). Needs ~88 GB transiently.",
-
   "expectedKernels": [
     "mmq.cu / mmvq.cu -- Q4_K matmul, the dominant decode cost on a bandwidth-bound MoE",
     "mmid.cu / topk-moe.cu / add-id.cu -- MoE routing and expert gather; a change here should NOT move a dense target",
     "fattn*.cu -- served with -fa on",
     "rope.cu / norm.cu / softmax.cu / cpy.cu -- engine-general; a change here should move EVERY target"
   ],
-  "blastRadiusNote": "Which targets move is a free coherence check on the claim. A submission claiming a Q4_K MoE matmul win that also moves a dense Q8_0 target is incoherent and does not promote -- so open a deliberately different second target early (chunk 04)."
+  "blastRadiusNote": "Which targets move is a free coherence check on the claim. A submission claiming a Q4_K MoE matmul win that also moves a dense Q8_0 target is incoherent and does not promote -- so open a deliberately different second target early (chunk 04).",
+  "weights": {
+    "hfRepo": "poolside/Laguna-XS-2.1",
+    "hfFile": null,
+    "public": false,
+    "publicTodo": "The BASE checkpoint is public, but no Q4_K_M GGUF is published for it, so this target currently requires a local conversion + quantization (~88 GB transient). That violates policy.publicWeights. Fix: publish the 20.3 GB Q4_K_M GGUF (and the 0.86 GB DFlash draft) under sapidlabs/ on HF, after confirming OpenMDW-1.1 permits redistribution. Until then this must not be anyone's entry point -- use qwen3-6-35b-a3b-q4-k-m.",
+    "sizeBytes": 20274300128
+  }
 }

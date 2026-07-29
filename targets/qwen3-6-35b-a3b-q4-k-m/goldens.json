@@ -1,0 +1,28 @@
+{
+  "contractVersion": 1,
+  "vendorCommit": "7ad9bd2",
+  "recordedAt": "2026-07-29T14:07:09+00:00",
+  "buildInfo": "b9902-7ad9bd259",
+  "prompts": {
+    "a-code-short": {
+      "sha256": "2f22ed70426acbb5360fb376b03aae036dd2d41c2f66581e9b190bdeaa1ab00a",
+      "chars": 968,
+      "completionTokens": 256
+    },
+    "b-prose-short": {
+      "sha256": "bc50b035069f03fa975953a5388082ba6b92b9ae9d72fbc2a40720cfbffa202d",
+      "chars": 901,
+      "completionTokens": 256
+    },
+    "c-code-2k": {
+      "sha256": "dc215fba19f257133095b4b9e1146e452d2dbdcfc3997638a0dd4769af05f931",
+      "chars": 1008,
+      "completionTokens": 256
+    },
+    "d-doc-8k": {
+      "sha256": "99110c03eddb8251144ed9638f578ac3a91bf4a312701cd35517192a61a629a2",
+      "chars": 2327,
+      "completionTokens": 425
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "slug": "qwen3-6-35b-a3b-q4-k-m",
+  "name": "Qwen3.6 35B-A3B Q4_K_M",
+  "recipe": "qwen3-6-35b-a3b-q4-k-m",
+  "recipeUrl": "https://howtospark.com/recipes/qwen3-6-35b-a3b-q4-k-m",
+  "why": "The contributor entry point. Its weights are a single public download \u2014 no conversion, no quantization, no 88 GB of transient disk. That is the whole reason it exists: the arena's first target needed a checkpoint nobody could fetch, which put hours of work in front of anyone's first line of CUDA.",
+  "weights": {
+    "hfRepo": "unsloth/Qwen3.6-35B-A3B-GGUF",
+    "hfFile": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+    "public": true,
+    "verifiedOn": "2026-07-29",
+    "verifiedHow": "HF API: gated=False, private=False, and the file is listed in the repo.",
+    "download": "hf download unsloth/Qwen3.6-35B-A3B-GGUF Qwen3.6-35B-A3B-UD-Q4_K_M.gguf --local-dir ~/models/gguf",
+    "sizeBytes": 22134528992
+  },
+  "modelName": "unsloth/Qwen3.6-35B-A3B-GGUF",
+  "seed": 0,
+  "port": 8080,
+  "defaultMaxTokens": 256,
+  "promptSettings": {
+    "d-doc-8k": {
+      "maxTokens": 512
+    }
+  },
+  "serveArgs": [
+    "-m",
+    "~/models/gguf/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+    "-c",
+    "32768",
+    "-ngl",
+    "99",
+    "-fa",
+    "on",
+    "--jinja"
+  ],
+  "serveArgsNote": "Stock llama.cpp flags \u2014 this model needs no architecture port, unlike laguna. THINKING IS DISABLED VIA extraBody, NOT via --reasoning-budget 0: measured on build b9902-7ad9bd259, that flag leaves Qwen3.6 emitting an empty `content` with the whole output budget spent in `reasoning_content`. `chat_template_kwargs: {enable_thinking: false}` in the request body works \u2014 content 'Hello', finish_reason 'stop'. The flag does work for Laguna, so this is per-model, not per-build. --parallel 1 is appended by the harness from the contract, because any batching breaks token identity on this part.",
+  "expectContextTokens": 32768,
+  "startupTimeout": 900,
+  "modelIntegrity": {
+    "path": "~/models/gguf/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+    "bytes": 22134528992,
+    "verifySha": false,
+    "shaNote": "Size is checked every run. Full hashing is opt-in because it costs ~1 min; the referee turns it on."
+  },
+  "expectedKernels": [
+    "mmq.cu / mmvq.cu -- Q4_K matmul",
+    "mmid.cu / topk-moe.cu / add-id.cu -- MoE routing; should NOT move a dense target",
+    "fattn*.cu -- served with -fa on",
+    "rope.cu / norm.cu / softmax.cu / cpy.cu -- engine-general; should move EVERY target"
+  ],
+  "blastRadiusNote": "Same quant family as the laguna target (Q4_K_M MoE), so this pair does NOT yet give blast-radius power. A deliberately different third target -- dense, or a different quant -- is still wanted; chunk 04.",
+  "extraBody": {
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    }
+  }
+}

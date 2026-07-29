@@ -98,7 +98,11 @@
         "armEndC": 56,
         "coolbackSeconds": 60,
         "note": "Two consecutive baseline arms both ran 46 -> 56 C and both took ~60 s to fall back under the ceiling. A ranked arm heats this part by 10 C, repeatably. 46 costs about a minute of waiting per arm and is what makes the arms comparable; do not raise it to save that minute."
-      }
+      },
+      "mode": "relative-to-idle-floor",
+      "toleranceC": 3,
+      "absoluteNote": "maxStartTempC is kept only as the fallback when nvidia-smi reports no temperature at all. The gate normally uses floor + toleranceC.",
+      "whyRelative": "An absolute ceiling assumes a fixed idle floor, and the floor drifts. Measured 2026-07-29: the same node, verifiably idle (load 0.04, 105 GB free, no processes), sat at 52 C while nvidia-smi ALSO claimed 96% utilisation, which was false. A 46 C ceiling taken from yesterday's 43 C idle then deadlocks forever \u2014 the gate waited 720s and would have failed the run. The gate's job is only that every arm starts from the SAME thermal state, and floor + tolerance does that without depending on a remembered absolute."
     },
     "multiNode": {
       "supported": true,
@@ -121,7 +125,9 @@
   "policy": {
     "optimizationVsRecipe": "Optimizations preserve output and get the cheap gate. Changes that alter output (precision, quantization, sampling) are a new RECIPE, not an arena submission, and need eval evidence on howtospark.com.",
     "scoreScope": "A submission names the targets it claims. Engine-general changes score across all targets; model-specific ones score on one. A claim of 'faster Q4_K MoE matmul' where a dense Q8_0 target also moves is incoherent and does not promote.",
-    "baselineAfterPromotion": "OPEN QUESTION -- mlxfast re-pins the baseline to the frontier. Until decided, the baseline is the vendor pin above and every score is only meaningful against contractVersion 1."
+    "baselineAfterPromotion": "OPEN QUESTION -- mlxfast re-pins the baseline to the frontier. Until decided, the baseline is the vendor pin above and every score is only meaningful against contractVersion 1.",
+    "publicWeights": "EVERY target must point at weights a contributor can DOWNLOAD. No target may require someone to produce their own quantization. This is a hard rule, not a preference: the first target here originally needed a 67 GB base checkpoint converted and quantized locally with ~88 GB of transient disk, which is hours of work before a contributor writes one line of CUDA -- and most people stop there. A barrier in front of the arena costs more than any single kernel win inside it.",
+    "publicWeightsEnforcement": "A target declares weights.hfRepo (+ hfFile for GGUF) and weights.public. The harness refuses a target with no weights block, and warns loudly on public:false. Verify with the HF API that the repo is neither gated nor private before adding a target -- 'I think it is public' is how this rule quietly rots."
   },
   "repoUrl": "https://github.com/Sapid-Labs/llamacpp-spark-arena"
 }

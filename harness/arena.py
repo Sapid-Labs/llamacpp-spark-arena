@@ -96,6 +96,22 @@ def load_target(slug):
     t = json.loads(path.read_text())
     t["_dir"] = path.parent
     t["_slug"] = slug
+
+    # Hard rule: a target must point at weights a contributor can DOWNLOAD.
+    # Requiring someone to produce their own quantization puts hours of work and
+    # ~88 GB of transient disk in front of their first line of CUDA, and most
+    # people stop there. A barrier in front of the arena costs more than any
+    # single kernel win inside it.
+    w = t.get("weights")
+    if not w or not w.get("hfRepo"):
+        die(f"target '{slug}' declares no downloadable weights.\n"
+            f"    Add a weights block naming a PUBLIC Hugging Face repo (and hfFile for a\n"
+            f"    GGUF), verified not gated and not private. See policy.publicWeights.")
+    if not w.get("public", False):
+        Out.warn(f"{slug}: weights are NOT publicly downloadable "
+                 f"({w.get('publicTodo', 'no plan recorded')})")
+        Out.warn("  contributors cannot run this target without building the weights "
+                 "themselves — it must not be anyone's entry point")
     return t
 
 
@@ -146,6 +162,39 @@ def gpu_power_w():
         return None
 
 
+_IDLE_FLOOR = None
+
+
+def idle_floor_c(samples=6, gap=5):
+    """The coolest this node gets right now, measured once per run.
+
+    The gate used to compare against a fixed 46 C, taken from an idle reading of
+    43 C. That number does not hold: the same node, verifiably idle (load 0.04,
+    105 GB free, no processes), has been observed sitting at 52 C with
+    nvidia-smi also reporting 96% utilisation — which it is not. Its
+    unified-memory readings are known to be unreliable, and an absolute ceiling
+    below the current floor deadlocks the gate forever.
+
+    So calibrate against the machine instead of against a remembered number. The
+    gate's job is only that every arm STARTS from the same thermal state; that
+    works off a floor + tolerance and does not care what the absolute value is.
+    """
+    global _IDLE_FLOOR
+    if _IDLE_FLOOR is not None:
+        return _IDLE_FLOOR
+    readings = []
+    for _ in range(samples):
+        t = gpu_temp_c()
+        if t is not None:
+            readings.append(t)
+        time.sleep(gap)
+    _IDLE_FLOOR = min(readings) if readings else None
+    if _IDLE_FLOOR is not None:
+        Out.info(f"idle floor calibrated: {_IDLE_FLOOR:.0f} C "
+                 f"(from {len(readings)} samples over {samples * gap}s)")
+    return _IDLE_FLOOR
+
+
 def thermal_gate():
     """Block until the part is cool enough that the arms are comparable.
 
@@ -154,7 +203,10 @@ def thermal_gate():
     kernel.
     """
     cfg = CONTRACT["measurement"]["thermalGate"]
-    ceiling, budget = cfg["maxStartTempC"], cfg["maxWaitSeconds"]
+    budget = cfg["maxWaitSeconds"]
+    tolerance = cfg.get("toleranceC", 3)
+    floor = idle_floor_c()
+    ceiling = (floor + tolerance) if floor is not None else cfg["maxStartTempC"]
     t = gpu_temp_c()
     if t is None:
         Out.warn("no nvidia-smi temperature -- thermal gate skipped, results are advisory")
@@ -166,8 +218,8 @@ def thermal_gate():
         waited += 20
         t = gpu_temp_c()
     if t > ceiling:
-        die(f"thermal gate never cleared: {t:.0f} C after {budget}s. "
-            f"Something else is using the node, or the ceiling ({ceiling} C) is wrong for this room.")
+        die(f"thermal gate never cleared: {t:.0f} C after {budget}s "
+            f"(floor {floor} C + {tolerance} C tolerance). Something else is using the node.")
     Out.info(f"thermal gate: {t:.0f} C (ceiling {ceiling} C)")
     return t
 
