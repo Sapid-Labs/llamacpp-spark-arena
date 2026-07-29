@@ -202,6 +202,11 @@ on a referee's node, **not** on CI. Self-hosted GitHub runners must not execute
 untrusted fork PRs on hardware you own, and there is no version of that caveat
 that gets safer with volume.
 
+## Running it
+
+[**RUNBOOK.md**](RUNBOOK.md) has the solo loop, the referee loop, and how a
+promotion reaches howtospark.com — with the exact commands.
+
 ## Status
 
 Early, but the gate chain is real and tested end to end: engine pinned, harness
