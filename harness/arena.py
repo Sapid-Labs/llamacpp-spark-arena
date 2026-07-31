@@ -86,6 +86,45 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+# Gate 3 used to compare tokens only; it now also times the arms. Old records
+# carry the old id and are still valid verifications of what they checked.
+HELD_OUT_GATE_IDS = ("held-out-identity-and-speedup", "held-out-token-identity")
+
+
+def held_out_tolerance(default=0.5):
+    """How much of a claimed gain must survive unseen prompts. From the contract,
+    so the number is published rather than buried in the harness."""
+    for g in CONTRACT.get("gates", []):
+        if g.get("id") in HELD_OUT_GATE_IDS and "tolerance" in g:
+            return g["tolerance"]
+    return default
+
+
+def require_local_node(record, path, kind, force=False):
+    """Refuse a record measured somewhere else.
+
+    Every number this harness publishes is a paired ratio, and a paired ratio is
+    only meaningful on the node that produced it. `promote` copies the ratio
+    straight out of the record it is handed, so handing it the contributor's
+    record publishes the contributor's measurement under the referee's name. It
+    would pass every other check in `promote`, and the site would then label it
+    verified. Cheap to check, so check it.
+    """
+    node = record.get("node")
+    here = os.uname().nodename
+    if not node or node == here:
+        return
+    msg = (f"{kind} {path} was measured on '{node}', but this node is '{here}'.\n"
+           f"    Gate 5 is the referee's, and so is the measurement behind it: re-run the\n"
+           f"    submission here and promote YOUR record, not the contributor's.\n"
+           f"      ./bench.sh --target <target>\n"
+           f"    Pass --force only if you mean to publish a number you did not measure.")
+    if force:
+        Out.warn(f"--force: promoting a {kind} measured on '{node}', not '{here}'")
+        return
+    die(msg)
+
+
 # ------------------------------------------------------------------- contract
 
 def load_target(slug):
@@ -280,6 +319,75 @@ def build(tree: Path, label):
 
 # --------------------------------------------------------------------- server
 
+
+# -------------------------------------------------------------------- sandbox
+
+_EGRESS_PROBE = (
+    "import socket\n"
+    "try:\n"
+    "    socket.create_connection(('1.1.1.1', 443), timeout=4).close()\n"
+    "    print('EGRESS_OPEN')\n"
+    "except Exception:\n"
+    "    print('EGRESS_BLOCKED')\n"
+)
+
+
+def sandbox_cfg():
+    return CONTRACT.get("sandbox") or {}
+
+
+def _sh(cmd, timeout=90):
+    r = subprocess.run(["bash", "-lc", cmd], capture_output=True, text=True, timeout=timeout)
+    return (r.stdout or "").strip()
+
+
+def sandbox_status():
+    """Actively try to reach the internet as the sandbox user.
+
+    An attempt, not an inspection of the ruleset: a rule that exists and does not
+    match is exactly what this has to catch.
+    """
+    cfg = sandbox_cfg()
+    user = cfg.get("user")
+    if not user:
+        return False, "contract declares no sandbox.user"
+    if _sh(f"id -u {user} >/dev/null 2>&1 && echo yes || echo no") != "yes":
+        return False, f"user '{user}' does not exist on this node"
+    if _sh(f"sudo -n -u {user} true >/dev/null 2>&1 && echo yes || echo no") != "yes":
+        return False, (f"cannot run as '{user}' without a password. See sandbox.setup "
+                       f"in benchmark.json.")
+    probe = Path("/tmp/arena_egress_probe.py")
+    probe.write_text(_EGRESS_PROBE)
+    out = _sh(f"sudo -n -u {user} python3 {probe} 2>&1 | tail -1")
+    if "EGRESS_BLOCKED" in out:
+        return True, f"egress from '{user}' is blocked"
+    if "EGRESS_OPEN" in out:
+        return False, (f"egress from '{user}' is OPEN. The REJECT rule is missing or not matching; "
+                       f"a submission could fetch help mid-run.")
+    return False, f"probe gave no verdict: {out[:120]}"
+
+
+def cmd_sandbox(args):
+    cfg = sandbox_cfg()
+    Out.step(f"sandbox: mechanism '{cfg.get('mechanism')}', user '{cfg.get('user')}'")
+    ok, detail = sandbox_status()
+    (Out.ok if ok else Out.fail)(detail)
+    if not ok:
+        print()
+        Out.info("one-time root setup (shared with the vLLM arena):")
+        for line in cfg.get("setup", []):
+            print(f"      {line}")
+        print()
+        Out.info(cfg.get("setupNote", ""))
+    else:
+        user = cfg["user"]
+        for label, path in (("candidate binary dir", str(CAND_TREE / "build" / "bin")),
+                            ("arena tree", str(ROOT))):
+            r = _sh(f"sudo -n -u {user} test -r {path} && echo yes || echo no")
+            (Out.ok if r == "yes" else Out.warn)(f"{label} readable by {user}: {r}")
+    return 0 if ok else 1
+
+
 class Server:
     """llama-server for one arm. Ready in ~3 s warm / ~14 s cold."""
 
@@ -301,7 +409,35 @@ class Server:
                 args += flag.split()
         return args
 
+    def _sandbox_guard(self):
+        """No CANDIDATE-tree binary runs without verified network isolation.
+
+        On the server rather than in run_arm: run_arm is one of several callers,
+        and a guard that one path bypasses is not a guard. Baseline arms are
+        exempt -- that tree is the pin.
+        """
+        if not sandbox_cfg().get("required"):
+            return
+        try:
+            is_candidate = str(self.binary).startswith(str(CAND_TREE))
+        except Exception:
+            is_candidate = True          # unsure means treat it as untrusted
+        if not is_candidate:
+            return
+        ok, detail = sandbox_status()
+        if not ok:
+            die("refusing to start a server built from the CANDIDATE tree without "
+                "network isolation.\n"
+                f"    {detail}\n"
+                "    Gate 3 stops a submission that memorised the held-out answers. It cannot\n"
+                "    stop one that fetches help while the arm runs. Run\n"
+                "    `python3 harness/arena.py sandbox --check` for the one-time setup, or set\n"
+                "    sandbox.required=false in benchmark.json and accept that submissions are\n"
+                "    trusted.")
+        Out.ok(f"sandbox: {detail}")
+
     def __enter__(self):
+        self._sandbox_guard()
         argv = self._argv()
         Out.info("serve: " + " ".join(argv))
         self.log = open(self.log_path, "w")
@@ -694,7 +830,8 @@ def cmd_bench(args):
           f"prefill x{prefill_speedup:.4f}  ->  {verdict}")
     print(f"    written to {out.relative_to(ROOT)}")
     if record["promotable"]:
-        print(f"    {Out.DIM}gate 3 (held-out prompts) runs on the referee's node, not here.{Out.OFF}")
+        print(f"    {Out.DIM}gate 3 (held-out identity AND speedup) runs on the referee's "
+              f"node — pass --claimed-speedup {decode_speedup:.5f}.{Out.OFF}")
     sys.exit(0 if record["promotable"] else 1)
 
 
@@ -788,18 +925,25 @@ def generate_heldout_prompts(target, seed_hex, count):
 
 
 def cmd_heldout(args):
-    """Gate 3: paired token identity on prompts nobody has seen.
+    """Gate 3: paired token identity AND speedup, on prompts nobody has seen.
 
-    Runs base and candidate back to back on freshly generated prompts and
-    compares output hashes. No goldens are stored or needed -- the base arm
-    computes them in the same session, which is also what makes them impossible
-    to tune against.
+    Runs base and candidate back to back on freshly generated prompts, compares
+    output hashes, and times both arms. No goldens are stored or needed -- the
+    base arm computes them in the same session, which is also what makes them
+    impossible to tune against.
+
+    The arms were always timed; the numbers were simply thrown away. Keeping them
+    turns "it does not go faster on my node" from the referee's opinion into a
+    gate result, recorded next to the seed that produced it. The vLLM arena needs
+    the same check to catch a memoizing patch. Here the editable surface is CUDA,
+    so nothing can memoize -- what this catches instead is a win that lives only
+    on the submitter's node, or only on the prompts they tuned against.
     """
     target = load_target(args.target)
     seed = args.seed or os.urandom(16).hex()
     prompts = generate_heldout_prompts(target, seed, args.count)
 
-    Out.step(f"gate 3: held-out token identity ({args.count} generated prompts)")
+    Out.step(f"gate 3: held-out identity + speedup ({args.count} generated prompts)")
     Out.info(f"seed {seed}")
     Out.info("the seed is recorded in the result, so these prompts can be "
              "regenerated to audit this verification -- but not before it")
@@ -807,27 +951,68 @@ def cmd_heldout(args):
     base_bin = build(BASE_TREE, "base tree")
     cand_bin = build(CAND_TREE, "candidate tree")
 
-    base_arm = run_arm(base_bin, target, prompts, "held-out baseline", "heldout-base")
-    cand_arm = run_arm(cand_bin, target, prompts, "held-out candidate", "heldout-cand")
+    # One pair by default: this gate already costs ~11 minutes, and the pair is
+    # what makes the ratio a ratio. More pairs tighten the median when a claim
+    # is close to the tolerance.
+    pairs = max(1, args.pairs or 1)
+    ratios, arm_pairs = [], []
+    for i in range(pairs):
+        label = f" (pair {i+1}/{pairs})" if pairs > 1 else ""
+        b = run_arm(base_bin, target, prompts, f"held-out baseline{label}", f"heldout{i}-base")
+        c = run_arm(cand_bin, target, prompts, f"held-out candidate{label}", f"heldout{i}-cand")
+        arm_pairs.append((b, c))
+        ratios.append({
+            "decode": c["decodeTps"] / b["decodeTps"],
+            "prefill": c["prefillTps"] / b["prefillTps"],
+        })
+        if pairs > 1:
+            Out.info(f"pair {i+1}: decode x{ratios[-1]['decode']:.4f}  "
+                     f"prefill x{ratios[-1]['prefill']:.4f}")
+
+    held_decode = statistics.median(r["decode"] for r in ratios)
+    held_prefill = statistics.median(r["prefill"] for r in ratios)
 
     mismatches = []
-    for b, c in zip(base_arm["prompts"], cand_arm["prompts"]):
-        if b["sha256"] != c["sha256"]:
-            mismatches.append({
-                "id": b["id"],
-                "baseSha256": b["sha256"],
-                "candidateSha256": c["sha256"],
-                "baseTokens": b["completionTokens"],
-                "candidateTokens": c["completionTokens"],
-            })
-            Out.fail(f"{b['id']}: output differs ({b['sha256'][:12]} -> {c['sha256'][:12]})")
-    passed = not mismatches
-    if passed:
-        Out.ok(f"gate 3 ({len(prompts)}/{len(prompts)} identical on unseen prompts)")
+    for base_arm, cand_arm in arm_pairs:
+        for b, c in zip(base_arm["prompts"], cand_arm["prompts"]):
+            if b["sha256"] != c["sha256"]:
+                mismatches.append({
+                    "id": b["id"],
+                    "baseSha256": b["sha256"],
+                    "candidateSha256": c["sha256"],
+                    "baseTokens": b["completionTokens"],
+                    "candidateTokens": c["completionTokens"],
+                })
+                Out.fail(f"{b['id']}: output differs ({b['sha256'][:12]} -> {c['sha256'][:12]})")
+    identical = not mismatches
+    if identical:
+        Out.ok(f"held-out identity ({len(prompts)}/{len(prompts)} identical on unseen prompts)")
+
+    # The claimed gain has to survive prompts the submitter never saw. Stated as
+    # a fraction of the EXCESS over 1.0, not of the ratio: x1.02 claimed against
+    # x1.01 measured is half the win, and comparing raw ratios would call that a
+    # 99% match.
+    tol = held_out_tolerance()
+    claimed = args.claimed_speedup
+    generalizes = None
+    if claimed and claimed > 1.0:
+        need = 1.0 + (claimed - 1.0) * tol
+        generalizes = held_decode >= need
+        (Out.ok if generalizes else Out.fail)(
+            f"held-out decode x{held_decode:.4f} vs claimed x{claimed:.4f} "
+            f"(needs >= x{need:.4f}, {tol:.0%} of the claimed gain)")
+        if not generalizes:
+            Out.info("a win that does not reproduce on unseen prompts, on this node, is "
+                     "not a win this frontier can carry")
+    else:
+        Out.warn("no --claimed-speedup given; speed generalization NOT checked. Pass the "
+                 "decodeSpeedup from the bench record you are refereeing.")
+
+    passed = identical and generalizes is not False
 
     record = {
         "contractVersion": CONTRACT["contractVersion"],
-        "gate": "held-out-token-identity",
+        "gate": "held-out-identity-and-speedup",
         "target": target["_slug"],
         "at": now_iso(),
         "node": os.uname().nodename,
@@ -837,10 +1022,21 @@ def cmd_heldout(args):
         "seed": seed,
         "promptCount": args.count,
         "promptIds": [p["id"] for p in prompts],
+        "pairs": pairs,
+        "ratios": ratios,
+        "heldOutDecodeSpeedup": round(held_decode, 5),
+        "heldOutPrefillSpeedup": round(held_prefill, 5),
+        "claimedDecodeSpeedup": claimed,
+        "tolerance": tol,
+        "identical": identical,
+        "generalizes": generalizes,
         "passed": passed,
         "mismatches": mismatches,
+        # Everything an auditor needs to land on the same verdict, not just the
+        # same prompts: the seed, the count, the pair count and the claim.
         "regenerate": (f"python3 harness/arena.py heldout --target {target['_slug']} "
-                       f"--seed {seed} --count {args.count}"),
+                       f"--seed {seed} --count {args.count} --pairs {pairs}"
+                       + (f" --claimed-speedup {claimed}" if claimed else "")),
         "note": "Prompts are generated from the seed, never stored. Regenerating "
                 "with the same seed reproduces them exactly; without the record "
                 "they cannot be known in advance.",
@@ -925,6 +1121,13 @@ def cmd_promote(args):
     if not record.get("promotable") and not args.force:
         failed = [k for k, v in record["gates"].items() if not v]
         die(f"record did not pass its own gates ({', '.join(failed) or 'score <= 1.0'})")
+    # The ratio published to the frontier is the one in THIS record, so the
+    # record has to be the referee's own re-run. Promoting the contributor's
+    # record is the easy mistake: it passes every other check here, and the
+    # number on the chart then belongs to a node nobody else measured -- while
+    # the site presents it as verified. Gate 5 is the referee's; so is the
+    # measurement it rests on.
+    require_local_node(record, args.record, "bench record", args.force)
     # Gate 3 must be BACKED BY A RECORD, not asserted. A boolean flag is a
     # promise; a record names the seed, the node and the changed files, so the
     # verification can be reproduced by anyone later. "Verified" is granted, not
@@ -932,11 +1135,18 @@ def cmd_promote(args):
     held_out = None
     if args.held_out_record:
         held_out = json.loads(Path(args.held_out_record).read_text())
-        if held_out.get("gate") != "held-out-token-identity":
+        # Records written before gate 3 was timed carry the older id. Both are
+        # real verifications, so both are accepted; only the newer one can also
+        # report whether the win generalized.
+        if held_out.get("gate") not in HELD_OUT_GATE_IDS:
             die(f"{args.held_out_record} is not a held-out verification record")
         if held_out["target"] != target["_slug"]:
             die(f"held-out record is for target '{held_out['target']}'")
-        if not held_out.get("passed"):
+        require_local_node(held_out, args.held_out_record, "held-out record", args.force)
+        # Two halves, two messages. Gate 3 can now fail for a reason that has
+        # nothing to do with tokens, and reporting a speed failure as "changes
+        # output" would send the contributor after the wrong bug.
+        if held_out.get("mismatches") or held_out.get("identical") is False:
             die(f"held-out verification FAILED on {len(held_out.get('mismatches', []))} "
                 f"prompt(s) — this candidate changes output on inputs it was not "
                 f"tuned against, which is exactly what gate 3 exists to catch.")
@@ -948,10 +1158,29 @@ def cmd_promote(args):
                 f"{sorted(held_out.get('changedFiles', []))}\n    bench   : "
                 f"{sorted(record.get('changedFiles', []))}\n"
                 "    Re-run both against the same tree.")
+        # The timed half of gate 3. A kernel cannot memoize a completion, so
+        # this arena does not need the check to stop cheating the way the vLLM
+        # arena does -- it needs it to stop publishing a win that only exists on
+        # the contributor's node, or on the prompts they tuned against.
+        if held_out.get("generalizes") is False:
+            die(f"held-out decode x{held_out.get('heldOutDecodeSpeedup')} did not reproduce "
+                f"the claimed x{held_out.get('claimedDecodeSpeedup')} on unseen prompts "
+                f"(needed {held_out.get('tolerance', 0.5):.0%} of the claimed gain). "
+                "A speedup that does not survive inputs the submitter never saw is not "
+                "one this frontier can carry.")
+        if held_out.get("generalizes") is None:
+            Out.warn("held-out record has no speed check (no --claimed-speedup was passed). "
+                     "Gate 3 confirmed identity only; the speedup on the chart rests on the "
+                     "bench record alone.")
+        # Catch-all: a record that failed for a reason this version does not know
+        # about is still a failed record.
+        if not held_out.get("passed"):
+            die(f"{args.held_out_record} did not pass gate 3.")
     elif not args.force:
-        die("gate 3 (held-out token identity) has no verification record.\n"
+        die("gate 3 (held-out identity and speedup) has no verification record.\n"
             "    Run it on the referee's node:\n"
-            f"      python3 harness/arena.py heldout --target {target['_slug']}\n"
+            f"      python3 harness/arena.py heldout --target {target['_slug']} "
+            f"--claimed-speedup {record.get('decodeSpeedup')}\n"
             "    then pass --held-out-record results/<target>/heldout-<stamp>.json.\n"
             "    This is the gate that catches a kernel which reassociated its way "
             "into a different argmax on everything except the prompts it was tuned "
@@ -1088,6 +1317,13 @@ def main():
     b.add_argument("--no-integrity", action="store_true")
     b.set_defaults(fn=cmd_baseline)
 
+    sb = sub.add_parser("sandbox", help="check that isolation for candidate arms actually works")
+
+    sb.add_argument("--check", action="store_true", default=True)
+
+    sb.set_defaults(fn=cmd_sandbox)
+
+
     n = sub.add_parser("bench", help="paired candidate-vs-baseline run with gates")
     n.add_argument("--target", required=True)
     n.add_argument("--pairs", type=int, default=None)
@@ -1115,12 +1351,22 @@ def main():
     p.add_argument("--force", action="store_true")
     p.set_defaults(fn=cmd_promote)
 
-    h = sub.add_parser("heldout", help="gate 3: token identity on freshly generated prompts")
+    h = sub.add_parser("heldout",
+                       help="gate 3: token identity AND speedup on freshly generated prompts")
     h.add_argument("--target", required=True)
     h.add_argument("--count", type=int, default=6, help="how many prompts to generate")
     h.add_argument("--seed", default=None,
                    help="hex seed; omit for a fresh random one. Pass a recorded "
                         "seed to reproduce a past verification.")
+    h.add_argument("--claimed-speedup", type=float, default=None,
+                   # argparse runs help through %-formatting, so the percent sign
+                   # in the tolerance has to be doubled.
+                   help="the decodeSpeedup from the bench record you are refereeing. "
+                        "The held-out arms must reproduce at least "
+                        f"{held_out_tolerance() * 100:.0f}%% of that gain, or gate 3 fails.")
+    h.add_argument("--pairs", type=int, default=None,
+                   help="paired arms to run (default 1). Raise it when a claim sits "
+                        "close to the tolerance.")
     h.add_argument("--referee", default=None)
     h.set_defaults(fn=cmd_heldout)
 

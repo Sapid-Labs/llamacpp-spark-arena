@@ -55,7 +55,7 @@ absolute tok/s would mostly rank thermostats.
 |---|------|-----------|
 | 1 | **Editable surface** — the diff touches only `editablePaths`; the weights are unchanged | your node |
 | 2 | **Token identity** — output is byte-identical to the target's goldens, batch 1, warm | your node |
-| 3 | **Held-out token identity** — same, on prompts you have never seen | referee's node |
+| 3 | **Held-out identity *and speedup*** — same, on prompts you have never seen, and your claimed decode gain has to reproduce there | referee's node |
 | 4 | **Speedup floors** — ≥ 0.95 on both axes, so you cannot trade prefill for decode | your node |
 | 5 | **Beat the incumbent** | referee's node |
 
@@ -74,11 +74,20 @@ So they are **not stored at all**. They are generated from a random seed at
 verification time, and the seed is written into the result:
 
 ```bash
-python3 harness/arena.py heldout --target laguna-xs-2-1-q4-k-m
+python3 harness/arena.py heldout --target laguna-xs-2-1-q4-k-m --claimed-speedup 1.0412
 #   seed d49e430528782b725d8c3803065be02d
 #   heldout-00 … heldout-05     137 → 2,666 prompt tokens, 384 out
-#   PASS gate 3 (6/6 identical on unseen prompts)
+#   PASS held-out identity (6/6 identical on unseen prompts)
+#   PASS held-out decode x1.0388 vs claimed x1.0412 (needs >= x1.0206, 50% of the claimed gain)
 ```
+
+The arms are **timed**, not only compared. That is the second half of gate 3: a
+claimed gain has to survive prompts the submitter never picked, on the referee's
+node, or it is not a gain the frontier can carry. The tolerance is 50% of the
+claimed excess over 1.0, and it lives in `benchmark.json`. This arena does not
+need the timed half to stop a memoizing patch the way the vLLM arena does — a
+CUDA kernel cannot cache a completion — it needs it to stop publishing a win that
+only exists somewhere else.
 
 Nobody — including the referee — knows the prompts in advance. Anyone can
 regenerate them afterwards from the recorded seed to audit a disputed
@@ -101,9 +110,11 @@ Promotion requires the **record**, not a claim:
 ```
 
 `promote` refuses a record that failed, one produced against a *different diff*
-than the bench record, or none at all — and `--force` does not override a
-failure. Verifying one diff and promoting another is the obvious way to launder
-a submission.
+than the bench record, one whose held-out speedup did not reproduce, one measured
+on **a node other than the referee's**, or none at all — and `--force` does not
+override a failure. Verifying one diff and promoting another is the obvious way to
+launder a submission; promoting the submitter's own measurement is the easy way to
+publish a number nobody checked.
 
 ### Gate 3, demonstrated
 

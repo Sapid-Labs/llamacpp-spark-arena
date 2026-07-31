@@ -49,9 +49,16 @@ matrix is a free blast-radius check on your own explanation.
 
 ## What happens next
 
-A referee re-runs your submission on their own node and runs **gate 3**:
-token identity on prompts generated fresh from a random seed, which neither you
-nor they could know in advance. Promotion requires that record.
+A referee re-runs your submission on their own node and runs **gate 3**: token
+identity on prompts generated fresh from a random seed, which neither you nor
+they could know in advance, **and** a check that your claimed decode gain
+reproduces on those prompts. Promotion requires that record.
+
+The number published to the frontier is the referee's measurement, not the one in
+your `record.json` — `promote` refuses a record measured on another node. Yours
+is what earns the re-run; theirs is what goes on the chart. The paired ratio is
+why the two agree in practice, and a large gap between them is a finding worth
+discussing in the PR rather than a rejection on its own.
 
 Verification is **not** run in CI. Self-hosted runners must not execute
 untrusted fork code on hardware someone owns, and there is no version of that

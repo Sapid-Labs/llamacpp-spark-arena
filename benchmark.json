@@ -43,14 +43,17 @@
       "rule": "For every public prompt: candidate output is byte-identical to the target's golden, at batch 1, greedy, warmup discarded."
     },
     {
-      "id": "held-out-token-identity",
+      "id": "held-out-identity-and-speedup",
       "order": 3,
-      "rule": "Same, on prompts the submitter has never seen. Run by the referee only.",
+      "rule": "Same, on prompts the submitter has never seen, and the claimed decode speedup must reproduce on them. Run by the referee only.",
       "mechanism": "Prompts are GENERATED from a random seed at verification time, never stored. A file in a public repo is visible; a gitignored file on the referee's node is a static set that leaks a little with every verification. Generating instead means nobody -- including the referee -- knows the prompts in advance, and the seed is recorded in the result so anyone can regenerate them afterwards to audit a disputed verification. Unknowable ahead, reproducible behind.",
       "goldens": "None are stored. The base arm computes them in the same session, back to back with the candidate -- which is also what makes them impossible to tune against.",
-      "command": "python3 harness/arena.py heldout --target <target>",
-      "promotionRequires": "A passing record file, not a flag. `promote --held-out-record <path>` checks the record targets the same slug AND was produced against the same changed files as the bench record -- verifying one diff and promoting another is the obvious way to launder a failing submission.",
-      "catches": "A kernel that reassociated its way into a different argmax on everything except the prompts it was tuned against."
+      "command": "python3 harness/arena.py heldout --target <target> --claimed-speedup <decodeSpeedup from the bench record>",
+      "promotionRequires": "A passing record file, not a flag. `promote --held-out-record <path>` checks the record targets the same slug AND was produced against the same changed files as the bench record -- verifying one diff and promoting another is the obvious way to launder a failing submission. It also refuses a bench record measured on a node other than the referee's: the ratio it publishes has to be one the referee measured.",
+      "tolerance": 0.5,
+      "toleranceNote": "The held-out decode speedup must be at least this fraction of the claimed speedup's excess over 1.0. Stated against the excess rather than the ratio, because x1.02 claimed against x1.01 measured is half the win, not a 99% match.",
+      "whySpeedupToo": "Unlike the vLLM arena, this one does not need the timed half to stop a memoizing patch -- the editable surface is CUDA, so a kernel cannot cache a completion. What it stops here is publishing a gain that exists only on the submitter's node, or only on the prompts they tuned against. The arms were always timed; throwing the numbers away made 'it is not faster on my node' the referee's opinion instead of a recorded gate result.",
+      "catches": "A kernel that reassociated its way into a different argmax on everything except the prompts it was tuned against, and a speedup that does not survive inputs the submitter never saw."
     },
     {
       "id": "speedup-floors",
@@ -129,5 +132,25 @@
     "publicWeights": "EVERY target must point at weights a contributor can DOWNLOAD. No target may require someone to produce their own quantization. This is a hard rule, not a preference: the first target here originally needed a 67 GB base checkpoint converted and quantized locally with ~88 GB of transient disk, which is hours of work before a contributor writes one line of CUDA -- and most people stop there. A barrier in front of the arena costs more than any single kernel win inside it.",
     "publicWeightsEnforcement": "A target declares weights.hfRepo (+ hfFile for GGUF) and weights.public. The harness refuses a target with no weights block, and warns loudly on public:false. Verify with the HF API that the repo is neither gated nor private before adding a target -- 'I think it is public' is how this rule quietly rots."
   },
-  "repoUrl": "https://github.com/Sapid-Labs/llamacpp-spark-arena"
+  "repoUrl": "https://github.com/Sapid-Labs/llamacpp-spark-arena",
+  "sandbox": {
+    "why": "A submission here is CUDA and C++ compiled into llama-server, so it is lower risk than the vLLM arena's arbitrary Python -- a socket call would be visible in a reviewed diff. Lower is not zero, and the gate chain cannot see it: gate 3 stops a submission that MEMORISED the held-out answers, not one that fetches help while the arm runs. The two arenas should not disagree about whether that matters.",
+    "required": true,
+    "mechanism": "egress-reject-by-uid",
+    "mechanismNote": "Unprivileged namespaces are unavailable on this fleet: apparmor_restrict_unprivileged_userns is 1, so `unshare -rn` fails on uid_map and bubblewrap fails on RTM_NEWADDR. A dedicated unprivileged UID with an egress REJECT rule needs root ONCE and then needs nothing.",
+    "user": "arena-run",
+    "setup": [
+      "sudo useradd -r -M -s /usr/sbin/nologin arena-run",
+      "sudo iptables -A OUTPUT -m owner --uid-owner arena-run -d 127.0.0.0/8 -j ACCEPT",
+      "sudo iptables -A OUTPUT -m owner --uid-owner arena-run -j REJECT",
+      "printf '%s ALL=(arena-run) NOPASSWD: ALL\\n' \"$USER\" | sudo tee /etc/sudoers.d/arena-run",
+      "sudo chmod 0440 /etc/sudoers.d/arena-run",
+      "sudo apt-get install -y iptables-persistent    # NOT installed by default on this fleet",
+      "sudo netfilter-persistent save                 # so the rule survives a reboot"
+    ],
+    "setupNote": "Same UID as the vLLM arena, so the root step is done once per node and both arenas use it. The UID needs read access to the built binary and the GGUF; both are under the operator's home directory. `arena.py sandbox --check` reports what is missing. Run it on every node that will run an arm. The same UID serves both arenas, so it is once per node, not once per arena.",
+    "verify": "python3 harness/arena.py sandbox --check",
+    "onVerifyFail": "The harness REFUSES to start a server built from the CANDIDATE tree. Baseline arms are unaffected -- that tree is the pin.",
+    "probeNote": "The check is an active egress attempt, not an inspection of the firewall rules. A rule that exists and does not match is the failure worth catching."
+  }
 }

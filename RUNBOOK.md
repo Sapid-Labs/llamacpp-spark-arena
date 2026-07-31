@@ -45,8 +45,11 @@ python3 harness/arena.py gate --target laguna-xs-2-1-q4-k-m
 # 3. measure: rebuild if needed, thermal gate, paired arms, gates 1/2/4
 ./bench.sh --target laguna-xs-2-1-q4-k-m
 
-# 4. gate 3 — prompts generated fresh from a random seed
-python3 harness/arena.py heldout --target laguna-xs-2-1-q4-k-m --referee joe
+# 4. gate 3 — prompts generated fresh from a random seed, arms timed.
+#    --claimed-speedup is the decodeSpeedup step 3 printed; without it the
+#    speed half is skipped and only identity is checked.
+python3 harness/arena.py heldout --target laguna-xs-2-1-q4-k-m \
+  --claimed-speedup <decodeSpeedup from step 3> --referee joe
 
 # 5. promote (needs BOTH records)
 python3 harness/arena.py promote \
@@ -62,8 +65,10 @@ python3 harness/arena.py leaderboard --target laguna-xs-2-1-q4-k-m
 ```
 
 Step 3 exits non-zero and prints `REJECTED` unless it passes. Step 5 refuses a
-failing gate-3 record, a record from a *different diff*, or none at all — and
-`--force` does not override a failure.
+failing gate-3 record, a record from a *different diff*, a held-out speedup that
+did not reproduce, a record measured on **another node**, or none at all. `--force`
+does not override a failure — it only waives the missing-record and foreign-node
+checks, and it says so in the output.
 
 ## The referee loop
 
@@ -78,11 +83,14 @@ git -C vendor/llama.cpp apply submissions/<handle>-<slug>/changes.patch
 # 2. surface check first — cheapest rejection
 python3 harness/arena.py gate --target <target>
 
-# 3. re-measure on YOUR node. Their number is predictive, not authoritative.
+# 3. re-measure on YOUR node. Their number is predictive, not authoritative,
+#    and `promote` will refuse their record — it publishes yours.
 ./bench.sh --target <target>
 
-# 4. gate 3 — this is the half they could not run
-python3 harness/arena.py heldout --target <target> --referee joe
+# 4. gate 3 — this is the half they could not run. Feed it THEIR claim so the
+#    held-out arms have to reproduce it.
+python3 harness/arena.py heldout --target <target> \
+  --claimed-speedup <decodeSpeedup from their record.json> --referee joe
 
 # 5. promote if it holds, then publish (below)
 ```
@@ -90,6 +98,14 @@ python3 harness/arena.py heldout --target <target> --referee joe
 Their local number should land close to yours: the paired ratio cancels the
 host, which is the whole reason submissions are ratios rather than tok/s. A
 large gap is itself a finding — say so in the PR.
+
+Two guardrails make that a gate rather than a habit. `promote` compares the bench
+record's `node` against this machine and refuses a record measured elsewhere, so
+the ratio on the frontier is always one you measured. And gate 3 now fails when
+the claimed decode gain does not reproduce on the held-out prompts, to at least
+50% of the claimed excess over 1.0 — the tolerance lives in `benchmark.json`.
+Pass `--claimed-speedup` or that half is skipped, and both `heldout` and
+`promote` warn you that it was.
 
 ---
 
